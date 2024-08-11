@@ -1,0 +1,25 @@
+---
+import SocialIcons from './SocialIcons.astro';
+
+const menuItems = [
+  { name: 'CONCERTS', href: '/' },
+  { name: 'SPORTS', href: '/sports' },
+  { name: 'ABOUT', href: '/about' },
+];
+
+console.log(Astro.url.pathname)
+---
+
+<header class="header">
+  <div class="header-left">
+    <h1>JOSH REHDERS</h1>
+    <h1 style={{ marginTop: '-6px' }}>NEW YORK CITY & BEYOND</h1>
+    <p><a href="mailto:josh@rehders.photos">JOSH@REHDERS.PHOTOS</a></p>
+  </div>
+  <nav class="header-nav">
+    {menuItems.map(item => (
+      <a href={item.href} class={`header-link${item.href === Astro.url.pathname ? '-active' : ''}`}>{item.name}</a>
+    ))}
+    <SocialIcons />
+  </nav>
+</header>

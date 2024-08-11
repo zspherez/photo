@@ -1,0 +1,20 @@
+---
+import { icons } from "../icons/icons.ts";
+
+interface Props {
+    name: string;
+    customClass?: string;
+}
+
+const { name, customClass } = Astro.props;
+---
+
+<!-- <svg
+    class={customClass ? customClass : ""}
+    xmlns="http://www.w3.org/2000/svg"
+    height={size ? size : "24"}
+    width={size ? size : "24"}
+    viewBox="0 -960 960 960"><path fill-rule="evenodd" d={icons[name]} clip-rule="evenodd"></path>
+</svg> -->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" aria-hidden="true" data-slot="icon" class="m-2 h-6 fill-slate-100"><path fill-rule="evenodd" d={icons[name]} clip-rule="evenodd"></path></svg>

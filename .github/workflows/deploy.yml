@@ -21,6 +21,10 @@ jobs:
       - name: Checkout your repository using git
         uses: actions/checkout@v4
       - name: Install, build, and upload your site
+        env:
+          PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.PUBLIC_CLOUDINARY_CLOUD_NAME }}
+          PUBLIC_CLOUDINARY_API_KEY: ${{ secrets.PUBLIC_CLOUDINARY_API_KEY }}
+          SECRET_CLOUDINARY_API_KEY: ${{ secrets.SECRET_CLOUDINARY_API_KEY }}
         uses: withastro/action@v2
         # with:
           # path: . # The root location of your Astro project inside the repository. (optional)

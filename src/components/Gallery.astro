@@ -46,7 +46,7 @@ const resources = search.resources as CloudinaryResource[];
       onclick="setFullscreen(this)"
       ontouchend="if (!isScrolling) setFullscreen(this)"
       class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"
-      style={`flex-grow: ${CloudinaryResource.width * 300 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 300 / CloudinaryResource.height}px;`}
+      style={`flex-grow: ${CloudinaryResource.width * 400 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 400 / CloudinaryResource.height}px;`}
     >
 
       <!-- placeholder for proper grid sizing -->
@@ -100,9 +100,9 @@ const resources = search.resources as CloudinaryResource[];
   ))}
 
   <!-- placeholders required to properly size images in the last/incomplete row -->
-  {Array.from({length: 10}, () => (
+  <!-- {Array.from({length: 10}, () => (
     <div class="m-0 h-0 grow-[100] basis-[240px]"></div>
-  ))}
+  ))} -->
 
 </div>
 

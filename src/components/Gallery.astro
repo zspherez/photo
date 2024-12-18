@@ -9,6 +9,7 @@ import Icon from '../components/Icon.astro'
 
 export interface Props {
   folder: string;
+  filter?: string;
 }
 
 export interface CloudinaryResource {
@@ -36,13 +37,15 @@ const search = await cloudinary.search
   .execute();
 
 const resources = search.resources as CloudinaryResource[];
+// filter resources by type
+const filteredResources = Astro.props.filter ? resources.filter((resource) => resource.resource_type == Astro.props.filter) : resources;
 ---
 
 <div class="flex flex-wrap m-0.5">
 
-  {resources.map((CloudinaryResource, index) => (
+  {filteredResources.map((CloudinaryResource, index) => (
     <div
-      data-position={`${index == 0 ? "first" : index + 1 == resources.length ? "last" : "middle"}`}
+      data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
       onclick="setFullscreen(this)"
       ontouchend="if (!isScrolling) setFullscreen(this)"
       class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"

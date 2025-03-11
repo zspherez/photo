@@ -2,6 +2,8 @@
 import Layout from "../layouts/Layout.astro";
 import Header from "../components/Header.astro";
 import Gallery from "../components/Gallery.astro";
+import PhotoGallery from "../components/PhotoGallery.astro";
+const dev = import.meta.env.DEV;
 ---
 
 <Layout
@@ -11,7 +13,7 @@ import Gallery from "../components/Gallery.astro";
 
   <main>  
     <Header />
-    <Gallery folder="concerts" filter="image"/>
+    <PhotoGallery folder={dev ? "dev" : "concerts"}/>
   </main>
 
 </Layout>

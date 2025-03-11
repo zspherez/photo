@@ -1,0 +1,153 @@
+---
+import { v2 as cloudinary } from "cloudinary";
+import Icon from './Icon.astro';
+import { z } from "astro:content";
+
+export interface Props {
+  folder: string; // Main folder with videos
+  thumbnailFolder?: string; // Optional thumbnail folder
+}
+
+export interface CloudinaryResource {
+  secure_url: string;
+  resource_type: string;
+  width: number;
+  height: number;
+  duration: number;
+  aspect_ratio: number;
+  context: { alt: string };
+}
+
+cloudinary.config({
+  cloud_name: import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: import.meta.env.PUBLIC_CLOUDINARY_API_KEY,
+  api_secret: import.meta.env.SECRET_CLOUDINARY_API_KEY,
+  secure: true,
+});
+
+// Fetch videos from the main folder
+const videoSearch = await cloudinary.search
+  .expression(`folder:${Astro.props.folder} AND resource_type:video`)
+  .with_field("context")
+  .sort_by("display_name", "asc")
+  .max_results(500)
+  .execute();
+
+// Determine thumbnail folder name
+const thumbnailFolderName = Astro.props.thumbnailFolder || `${Astro.props.folder}-thumbnails`;
+
+// Fetch thumbnails from the thumbnail folder
+const thumbnailSearch = await cloudinary.search
+  .expression(`folder:${thumbnailFolderName}`)
+  .sort_by("display_name", "asc")
+  .max_results(500)
+  .execute();
+
+const videos = videoSearch.resources as CloudinaryResource[];
+const thumbnails = thumbnailSearch.resources as CloudinaryResource[];
+
+// Create a mapping of video filenames to thumbnail URLs
+const thumbnailMap = new Map();
+thumbnails.forEach(thumbnail => {
+  // Extract full filename from URL
+  const fullFilename = thumbnail.secure_url.split('/').pop() || '';
+  // Split filename into name and extension
+  const dotIndex = fullFilename.lastIndexOf('.');
+  if (dotIndex > 7) {  // Make sure we have enough characters
+    // Get the base name without the 7-char ID and extension
+    const baseName = fullFilename.substring(0, dotIndex - 7);
+    thumbnailMap.set(baseName, thumbnail.secure_url);
+  }
+});
+
+console.log(thumbnailMap);
+
+// Helper function to get the thumbnail URL for a video
+function getThumbnailUrl(videoUrl: string): string {
+  // Extract full filename from URL
+  const fullFilename = videoUrl.split('/').pop() || '';
+  // Split filename into name and extension
+  const dotIndex = fullFilename.lastIndexOf('.');
+  
+  if (dotIndex > 7) {  // Make sure we have enough characters
+    // Get the base name without the 7-char ID and extension
+    const baseName = fullFilename.substring(0, dotIndex - 7);
+    
+    // Return the mapped thumbnail if available, otherwise fall back to default method
+    if (thumbnailMap.has(baseName)) {
+		console.log(baseName);
+      return thumbnailMap.get(baseName);
+    }
+  }
+  
+  // Fall back to default method if no match found
+  return videoUrl.replace(".mp4", ".jpg");
+}
+---
+
+<div class="flex flex-wrap m-0.5">
+  {videos.map((video, index) => (
+    <div
+      data-position={`${index == 0 ? "first" : index + 1 == videos.length ? "last" : "middle"}`}
+      onclick="setFullscreen(this)"
+      ontouchend="if (!isScrolling) setFullscreen(this)"
+      class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"
+      style={`flex-grow: ${video.width * 400 / video.height}; flex-basis: ${video.width * 400 / video.height}px;`}
+    >
+      <!-- placeholder for proper grid sizing -->
+      <div class="block" style={`padding-bottom: ${video.height / video.width * 100}%`}></div>
+
+      <div role="status" class="fullscreen:block fullscreen:fixed z-[2] absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2">
+        <span class="sr-only">loading video...</span>
+      </div>
+
+      <div>
+        <video
+          id={`video-${index}`}
+          loop webkit-playsinline playsinline muted
+          preload="none"
+          onclick="this.paused ? this.play() : this.pause()"
+          onmouseover="previewVideo(this)"
+          onmouseout="resetVideo(this)"
+          oncanplay="this.parentNode.previousElementSibling.style.display = 'none';"
+          poster={getThumbnailUrl(video.secure_url)}
+          class="resource absolute top-0 h-full w-full object-cover align-bottom pointer-events-none fullscreen:pointer-events-auto"
+        >
+          <source src={video.secure_url} type="video/mp4" />
+          Your browser does not support HTML video.
+        </video>
+      </div>
+
+      <div class="video-duration pointer-events-none fullscreen:pl-6 fullscreen:pb-6 fullscreen:z-[2] fullscreen:left-0 fullscreen:fixed absolute bottom-0 flex w-full items-center justify-start bg-gradient-to-t from-black/50 to-transparent font-mono">
+        <Icon name="play" />
+        <div class="text-xs">
+          <span id={`current-time-video-${index}`} class="current-time hidden fullscreen:inline-flex">0:00 / </span>
+          <span>{new Date(video.duration * 1000).toISOString().slice(15, 19)}</span>
+        </div>
+      </div>
+    </div>
+  ))}
+</div>
+
+<!-- handle updating the current time of the video playing when fullscreen -->
+<script>
+  const videos = document.querySelectorAll("video");
+  const intervals: { [key: string]: any } = {};
+
+  videos.forEach((video) => {
+    const currentTimeSpan = document.getElementById(`current-time-${video.id}`);
+    if (!currentTimeSpan) return;
+
+    video.addEventListener("play", () => {
+      intervals[video.id] = setInterval(() => {
+        const minutes = Math.floor(video.currentTime / 60);
+        const seconds = Math.floor(video.currentTime % 60);
+        currentTimeSpan.innerHTML = `${minutes}:${seconds.toString().padStart(2, "0")} / `;
+      }, 500);
+    });
+
+    video.addEventListener("pause", () => {
+      clearInterval(intervals[video.id]);
+    });
+  });
+</script>

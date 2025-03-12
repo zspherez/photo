@@ -60,10 +60,31 @@ const dev = import.meta.env.DEV;
     <meta name="twitter:image" content={share_image} />
     <meta name="twitter:image:alt" content="Josh Rehders is a concert and sports photographer based in New York City." />
 
-    {(prod || dev) && <GA />}
+    <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-5Y13N2RH7S" type="text/partytown"></script>
+    <script
+    is:inline
+    type="text/partytown">
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () {
+            dataLayer.push(arguments);
+        };
+      window.gtag('js', new Date());
+      window.gtag('config', 'G-5Y13N2RH7S');
+    </script>
+    <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+      new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+      j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+      'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+      })(window,document,'script','dataLayer','GTM-KCWFSGKB');</script>
+      <!-- End Google Tag Manager -->
   </head>
 
   <body class="bg-slate-100 text-neutral-900 dark:bg-neutral-900 dark:text-slate-100">
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KCWFSGKB"
+      height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+      <!-- End Google Tag Manager (noscript) -->
     <slot />
   </body>
 </html>

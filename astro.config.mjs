@@ -16,14 +16,5 @@ export default defineConfig({
         forward: ['dataLayer.push', 'gtag']
       }
     })
-  ],
-  output: "server",
-  server: {
-    headers: {
-      // 👇 `credentialless` is the trick to get both WebContainers & CORS images to both load
-      // See: https://developer.chrome.com/blog/coep-credentialless-origin-trial/#credentialless-to-the-rescue
-      "Cross-Origin-Embedder-Policy": "credentialless",
-      "Cross-Origin-Opener-Policy": "same-origin",
-    },
-  },
+  ]
 });

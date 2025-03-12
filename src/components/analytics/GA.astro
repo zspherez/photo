@@ -1,11 +1,34 @@
-<script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-5Y13N2RH7S" type="text/partytown"></script>
-<script
-is:inline
-type="text/partytown">
-  window.dataLayer = window.dataLayer || [];
-  window.gtag = function () {
-        dataLayer.push(arguments);
+---
+// Only use analytics in production
+const isProd = import.meta.env.PROD;
+---
+
+{isProd ? (
+  <>
+    <!-- Modified approach to avoid the redirect issue -->
+    <script is:inline define:vars={{ gaId: 'G-5Y13N2RH7S' }} type="text/partytown">
+      // Inline loading of gtag
+      (function(w,d,s,l,i){
+        w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+        'https://www.googletagmanager.com/gtag/js?id='+i+dl;f.parentNode.insertBefore(j,f);
+        
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', gaId);
+      })(window,document,'script','dataLayer',gaId);
+    </script>
+  </>
+) : (
+  <!-- No analytics in development -->
+  <script is:inline>
+    // Mock gtag function to prevent errors during development
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function() { 
+      console.log('GA disabled in development:', arguments);
+      dataLayer.push(arguments);
     };
-  window.gtag('js', new Date());
-  window.gtag('config', 'G-5Y13N2RH7S');
-</script>
+  </script>
+)}

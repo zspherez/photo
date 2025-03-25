@@ -12,16 +12,14 @@ import Gallery from "../components/Gallery.astro";
   <main>  
     <Header />
     <div class="about-container">
-      <iframe
-        src="https://drive.google.com/file/d/16DMzyJU7TGAjBLC9cZ1LuOZLS84Tw_0m/preview"
+      <object
+        data="/rehders_resume.pdf"
+        type="application/pdf"
         width="80%"
         height="800px"
-        allow="autoplay"
-        loading="lazy"
-        title="Resume"
-        style="border: none;"
-        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-      ></iframe>
+      >
+        <p>Your browser doesn't support PDF embedding. <a href="/resume.pdf">Download the resume</a> instead.</p>
+      </object>
     </div>
   </main>
 

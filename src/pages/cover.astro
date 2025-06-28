@@ -1,0 +1,26 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Gallery from "../components/Gallery.astro";
+---
+
+<Layout
+  title="Josh Rehders — Multimedia Creative Specialist"
+  description="Josh Rehders is a multimedia creative specialist based in New York City, with a focus on capturing electronic music events."
+>
+
+  <main>  
+    <Header />
+    <div class="about-container">
+      <object
+        data="/rehders_cover.pdf"
+        type="application/pdf"
+        width="80%"
+        height="800px"
+      >
+        <p>Your browser doesn't support PDF embedding. <a href="/rehders_cover.pdf">Download the cover letter</a> instead.</p>
+      </object>
+    </div>
+  </main>
+
+</Layout>

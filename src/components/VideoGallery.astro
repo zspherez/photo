@@ -115,7 +115,7 @@ function getThumbnailUrl(videoUrl: string): string {
       <div>
         <video
           id={`video-${index}`}
-          loop webkit-playsinline playsinline muted
+          loop webkit-playsinline playsinline
           preload="none"
           onclick="this.paused ? this.play() : this.pause()"
           onmouseover="previewVideo(this)"

@@ -42,6 +42,10 @@ const filteredResources = search.resources as CloudinaryResource[];
   {filteredResources.map((CloudinaryResource, index) => (
     <div
       data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
+      data-public-id={CloudinaryResource.public_id}
+      data-width={CloudinaryResource.width}
+      data-height={CloudinaryResource.height}
+      data-alt={CloudinaryResource.context?.alt || ""}
       onclick="setFullscreen(this)"
       ontouchend="if (!isScrolling) setFullscreen(this)"
       class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"
@@ -50,10 +54,6 @@ const filteredResources = search.resources as CloudinaryResource[];
 
       <!-- placeholder for proper grid sizing -->
       <div class="block" style={`padding-bottom: ${CloudinaryResource.height / CloudinaryResource.width * 100}%`}></div>
-
-      <div role="status" class="fullscreen:block fullscreen:fixed z-[2] absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2">
-        <span class="sr-only">loading image...</span>
-      </div>
 
       <CldImage
         src={CloudinaryResource.public_id}
@@ -96,7 +96,7 @@ const filteredResources = search.resources as CloudinaryResource[];
   </button>
 </div>
 
-<script client:inline>
+<script is:inline>
   let isAnimating = false;
 
   function setFullscreen(element, animation) {
@@ -104,11 +104,13 @@ const filteredResources = search.resources as CloudinaryResource[];
       return;
     }
 
+    // Start loading high-quality image immediately
+    const resource = element.querySelector(".resource");
+    loadHighQualityImage(element, resource);
+
     disableScrolling();
     enableFullscreenControls();
     element.id = "fullscreen";
-
-    const resource = element.querySelector(".resource");
     
     if (animation) {
       isAnimating = true;
@@ -123,6 +125,59 @@ const filteredResources = search.resources as CloudinaryResource[];
     } else {
       zoomIn(resource);
     }
+  }
+
+  function loadHighQualityImage(element, imgElement) {
+    const publicId = element.dataset.publicId;
+    
+    if (!publicId || !imgElement) return;
+
+    // Extract cloud name from existing image src
+    let cloudName = null;
+    const existingSrc = imgElement.src || imgElement.getAttribute('src');
+    if (existingSrc) {
+      const match = existingSrc.match(/res\.cloudinary\.com\/([^\/]+)\//);
+      if (match) {
+        cloudName = match[1];
+      }
+    }
+    
+    // Fallback if we can't extract cloud name
+    if (!cloudName) {
+      console.warn('Could not extract Cloudinary cloud name, skipping high-quality load');
+      return;
+    }
+
+    // Use screen dimensions for optimal fullscreen quality
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    
+    // Calculate target dimensions (account for device pixel ratio)
+    const targetWidth = Math.ceil(screenWidth * devicePixelRatio);
+    const targetHeight = Math.ceil(screenHeight * devicePixelRatio);
+    
+    // Create high-quality Cloudinary URL optimized for fullscreen viewing
+    const highQualityUrl = `https://res.cloudinary.com/${cloudName}/image/upload/c_fit,w_${targetWidth},h_${targetHeight},q_auto:good,f_auto/${publicId}`;
+    
+    // Preload the high-quality image
+    const highQualityImg = new Image();
+    highQualityImg.onload = () => {
+      // Update the existing image with high-quality version
+      if (imgElement.tagName === 'IMG') {
+        imgElement.src = highQualityUrl;
+        if (imgElement.srcset) {
+          imgElement.srcset = `${highQualityUrl} 1x`;
+        }
+      }
+    };
+    
+    highQualityImg.onerror = () => {
+      console.warn('Failed to load high-quality image:', highQualityUrl);
+    };
+    
+    // Start loading immediately
+    highQualityImg.src = highQualityUrl;
   }
 
   function escapeFullscreen(close) {

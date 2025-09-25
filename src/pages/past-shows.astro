@@ -1,0 +1,519 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+
+// Parse shows data
+const showsData = [
+  {
+    year: "2025",
+    shows: [
+      { name: "Experts Only Festival Afters", city: "New York City", venue: "Brooklyn Storehouse", photographed: true, photographedArtists: ["Eve Lauren"], allArtists: ["Eve Lauren", "Tini Gessler", "AYYBO", "AYYBO B2B Green Velvet", "Green Velvet", "Green Velvet B2B John Summit", "Green Velvet B3B John Summit B3B Layton Giordani", "John Summit B2B Layton Giordani", "John Summit B3B Layton Giordani B3B Tini Gessler", "Layton Giordani B2B Tini Gessler"] }, //afters
+      { name: "Experts Only Festival", city: "New York City", venue: "Randalls Island", photographed: true, photographedArtists: ["Eve Lauren",], allArtists: ["Eve Lauren", "Enamour B2B Weska", "Layton Giordani B2B Green Velvet", "John Summit"] },
+      { name: "Mau P Open2Close", city: "New York City", venue: "Brooklyn Storehouse", photographed: false, photographedArtists: [], allArtists: ["Mau P"] },
+      { name: "GRYFFIN", city: "New York City", venue: "Great Hall", photographed: true, photographedArtists: ["Seth Hills"], allArtists: ["GRYFFIN", "Seth Hills"] },
+      { name: "ARC Music Festival", city: "Chicago", venue: "Union Park", photographed: true, photographedArtists: ["Luke Dean B2B Matisa", "It's Murph"], allArtists: ["GENESI", "Notion", "Interplanetary Criminal B2B Malugi", "Hamdi B2B Riordan", "Luke Alessi B2B Matisa", "It's Murph", "Adam Beyer B2B Layton Giordani", "Fisher", "Skepta Mas Tiempo B2B Green Velvet", "Riordan B2B Obskur", "AYYBO", "Max Styler", "Eli Brown", "John Summit"] },
+      { name: "Ranger Trucco ARC Pre-party", city: "Chicago", venue: "JP Grazianos", photographed: false, photographedArtists: [], allArtists: ["Ranger Trucco"] },
+      { name: "Lollapalooza", city: "Chicago", venue: "Grant Park", photographed: true, photographedArtists: ["Daniel Allan"], allArtists: ["Dom Dolla", "Martin Garrix", "GRYFFIN", "Daniel Allan", "Mau P", "Cloonee", "Gracie Abrams", "Levity", "Two Friends", "Rüfüs Du Sol", "Barry Can't Swim"] },
+      { name: "Coldplay", city: "Miami", venue: "Hard Rock Stadium", photographed: false, photographedArtists: [], allArtists: ["Coldplay"] },
+      { name: "Angrybaby", city: "New York City", venue: "Boat Party", photographed: true, photographedArtists: ["Angrybaby", "SEUNG"], allArtists: ["Angrybaby", "SEUNG"] },
+      { name: "Sammy Virji", city: "New York City", venue: "Times Square", photographed: true, photographedArtists: ["Sammy Virji"], allArtists: ["Sammy Virji"] },
+      { name: "Max Styler", city: "New York City", venue: "Ruins at Knockdown Center", photographed: false, photographedArtists: [], allArtists: ["Max Styler"] },
+      { name: "Project Glow", city: "DC", venue: "RFK Festival Grounds", photographed: false, photographedArtists: [], allArtists: ["Kaskade", "Chris Lake", "Subtronics", "Wooli", "Odd Mob", "Matroda", "Loud Luxury"] },
+      { name: "SEUNG", city: "New York City", venue: "Music for a While", photographed: true, photographedArtists: ["SEUNG"], allArtists: ["SEUNG"] },
+      { name: "GRYFFIN", city: "Nashville", venue: "Pinnacle", photographed: true, photographedArtists: ["GRYFFIN"], allArtists: ["GRYFFIN"] },
+      { name: "Daniel Allan", city: "New York City", venue: "Elsewhere", photographed: true, photographedArtists: ["Daniel Allan"], allArtists: ["Daniel Allan"] },
+      { name: "ZAY", city: "Nashville", venue: "Night We Met", photographed: true, photographedArtists: ["ZAY", "ALEX RAYNE", "Peterson B2B Lucas."], allArtists: ["ZAY", "ALEX RAYNE", "Peterson B2B Lucas."] },
+      { name: "Max Styler", city: "Aspen", venue: "Belly Up", photographed: true, photographedArtists: ["Max Styler"], allArtists: ["Max Styler"] },
+      { name: "Dom Dolla Afters", city: "New York City", venue: "Brooklyn Storehouse", photographed: false, photographedArtists: [], allArtists: ["Dom Dolla"] },
+      { name: "Angrybaby", city: "New York City", venue: "Elsewhere", photographed: true, photographedArtists: ["Angrybaby"], allArtists: ["Angrybaby"] },
+      { name: "Gene Farris", city: "New York City", venue: "Superior Ingredients", photographed: true, photographedArtists: ["Gene Farris", "OFFAIAH"], allArtists: ["Gene Farris", "OFFAIAH"] }
+    ]
+  },
+  {
+    year: "2024",
+    shows: [
+      { name: "Taylor Swift", city: "Vancouver", venue: "BC Place", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+      { name: "Taylor Swift", city: "Vancouver", venue: "BC Place", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+      { name: "Steve Angello", city: "New York City", venue: "Brooklyn Mirage", photographed: false, photographedArtists: [], allArtists: ["Steve Angello"] },
+      { name: "Taylor Swift", city: "Miami", venue: "Hard Rock Stadium", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+      { name: "SEUNG", city: "New York City", venue: "Great Hall", photographed: true, photographedArtists: ["SEUNG"], allArtists: ["SEUNG"] },
+      { name: "Disclosure", city: "New York City", venue: "Ruins at Knockdown Center", photographed: false, photographedArtists: [], allArtists: ["Disclosure"] },
+      { name: "John Summit Afters", city: "Chicago", venue: "Radius", photographed: true, photographedArtists: ["John Summit"], allArtists: ["John Summit"] },
+      { name: "John Summit Comfort in Chaos Tour", city: "Chicago", venue: "Northerly Island", photographed: true, photographedArtists: ["John Summit"], allArtists: ["John Summit", "Chris Avantgarde"] },
+      { name: "John Summit Popup", city: "Chicago", venue: "Portillo's", photographed: true, photographedArtists: ["John Summit"], allArtists: ["John Summit"] },
+      { name: "ZAY", city: "New York City", venue: "1 Hotel Rooftop", photographed: true, photographedArtists: ["ZAY"], allArtists: ["ZAY", "SEUNG"] },
+      { name: "Forester", city: "New York City", venue: "Governors Island", photographed: true, photographedArtists: ["Forester"], allArtists: ["Forester"] },
+      { name: "Mau P", city: "New York City", venue: "99 Scott", photographed: false, photographedArtists: [], allArtists: ["Mau P"] },
+      { name: "Disclosure B2B Green Velvet ARC Afters", city: "Chicago", venue: "Radius", photographed: false, photographedArtists: [], allArtists: ["Disclosure B2B Green Velvet"] },
+      { name: "ARC", city: "Chicago", venue: "Union Park", photographed: true, photographedArtists: ["Jenn Getz & Alfie", "Avalon Emerson"], allArtists: ["Barry Can't Swim", "Salute B2B Barry Can't Swim", "Mau P", "Riordan", "Green Velvet", "Gorgon City", "Jenn Getz & Alfie", "Avalon Emerson", "Mau P B2B Green Velvet"] },
+      { name: "ZAY", city: "New York City", venue: "Summer Club", photographed: true, photographedArtists: ["ZAY"], allArtists: ["ZAY"] },
+      { name: "Taylor Swift", city: "Zurich", venue: "Stadion Letzigrund", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+      { name: "Ian Asher", city: "Houston", venue: "NOTO", photographed: true, photographedArtists: ["Ian Asher"], allArtists: ["Ian Asher"] },
+      { name: "Tyler Childers", city: "Nashville", venue: "Bridgestone Arena", photographed: true, photographedArtists: ["Tyler Childers"], allArtists: ["Tyler Childers"] },
+      { name: "Wooli", city: "Nashville", venue: "Municipal Auditorium", photographed: true, photographedArtists: ["Wooli"], allArtists: ["Wooli", "Subtronics"] },
+      { name: "Mau P Afters", city: "Nashville", venue: "The Caverns", photographed: true, photographedArtists: ["Mau P"], allArtists: ["Mau P"] },
+      { name: "Stolen Gin", city: "Nashville", venue: "The End", photographed: true, photographedArtists: ["Stolen Gin"], allArtists: ["Stolen Gin"] }    ]
+  },
+  {
+    year: "2023",
+    shows: [
+      { name: "Travis Scott", city: "Nashville", venue: "Bridgestone Arena", photographed: false, photographedArtists: [], allArtists: ["Travis Scott"] },
+      { name: "Lights on the Lawn", city: "Nashville", venue: "Alumni Lawn", photographed: true, photographedArtists: ["ALEX RAYNE"], allArtists: ["Loud Luxury", "ALEX RAYNE"] },
+      { name: "ARCtic Monkeys", city: "Nashville", venue: "Ascend Ampitheatre", photographed: true, photographedArtists: ["ARCtic Monkeys"], allArtists: ["ARCtic Monkeys"] },
+      { name: "Taylor Swift", city: "Seattle", venue: "Lumen Field", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+      { name: "Taylor Swift", city: "Seattle", venue: "Lumen Field", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+      { name: "Jason Mraz", city: "Seattle", venue: "Chateau Ste. Michelle Winery", photographed: true, photographedArtists: ["Jason Mraz"], allArtists: ["Jason Mraz"] },
+      { name: "Whiskey Myers", city: "Seattle", venue: "Chateau Ste. Michelle Winery", photographed: true, photographedArtists: ["Whiskey Myers"], allArtists: ["Whiskey Myers"] },
+      { name: "Taylor Swift", city: "Chicago", venue: "Soldier Field", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
+    ]
+  },
+  {
+    year: "2022",
+    shows: [
+      { name: "Yung Gravy", city: "Nashville", venue: "Marathon Music Works", photographed: true, photographedArtists: ["Yung Gravy"], allArtists: ["Yung Gravy"] },
+      { name: "Panic! At the Disco", city: "Nashville", venue: "Bridgestone Arena", photographed: true, photographedArtists: ["Panic! At the Disco"], allArtists: ["Panic! At the Disco"] },
+      { name: "Lights on the Lawn", city: "Nashville", venue: "Alumni Lawn", photographed: true, photographedArtists: ["Two Friends"], allArtists: ["Two Friends"] },
+      { name: "Peter McPoland", city: "Nashville", venue: "Bridgestone Arena", photographed: true, photographedArtists: ["Peter McPoland"], allArtists: ["Peter McPoland", "Twenty One Pilots"] },
+      { name: "Live on the Green", city: "Nashville", venue: "Public Square Park", photographed: true, photographedArtists: ["The Criticals", "COIN", "Devon Gilfillian"], allArtists: ["The Criticals", "COIN", "Devon Gilfillian"] },
+      { name: "Benee", city: "Seattle", venue: "Showbox", photographed: false, photographedArtists: [], allArtists: ["Benee"] },
+      { name: "Coldplay", city: "Houston", venue: "NRG Stadium", photographed: false, photographedArtists: [], allArtists: ["Coldplay"] },
+      { name: "Tame Impala", city: "Nashville", venue: "Bridgestone Arena", photographed: true, photographedArtists: ["Tame Impala"], allArtists: ["Tame Impala"] },
+      { name: "Rites of Spring", city: "Nashville", venue: "Alumni Lawn", photographed: false, photographedArtists: [], allArtists: ["2 Chainz", "Waka Flocka", "GAYLE"] },
+      { name: "Yung Gravy", city: "Nashville", venue: "Marathon Music Works", photographed: false, photographedArtists: [], allArtists: ["Yung Gravy"] }
+    ]
+  },
+  {
+    year: "2021",
+    shows: [
+      { name: "Music Midtown", city: "Atlanta", venue: "Piedmont Park", photographed: false, photographedArtists: [], allArtists: ["Surfaces", "Maroon 5", "Jonas Brothers", "MGK", "AJR", "Bleachers"] },
+      { name: "All Time Low", city: "Nashville", venue: "Marathon Music Works", photographed: true, photographedArtists: ["All Time Low"], allArtists: ["All Time Low"] }
+
+    ]
+  },
+  {
+    year: "2020",
+    shows: []
+  },
+  {
+    year: "2019",
+    shows: [
+      { name: "Indigo Girls", city: "Houston", venue: "Jones Hall", photographed: false, photographedArtists: [], allArtists: ["Indigo Girls", "Houston Symphony"] },
+      { name: "Panic! At the Disco", city: "Houston", venue: "NRG Stadium", photographed: false, photographedArtists: [], allArtists: ["Panic! At the Disco"] }
+    ]
+  },
+  {
+    year: "2018",
+    shows: [
+      { name: "Kendrick Lamar", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: [], allArtists: ["Kendrick Lamar"] }
+    ]
+  },
+  {
+    year: "2017",
+    shows: [
+      { name: "Chance the Rapper", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: [], allArtists: ["Chance the Rapper"] }
+    ]
+  },
+  {
+    year: "2016",
+    shows: [
+      { name: "Coldplay", city: "Dallas", venue: "AT&T Stadium", photographed: false, photographedArtists: ["Coldplay"], allArtists: ["Coldplay"] }
+    ]
+  },
+  {
+    year: "2015",
+    shows: [
+      { name: "Indigo Girls", city: "Houston", venue: "House of Blues", photographed: false, photographedArtists: ["Indigo Girls"], allArtists: ["Indigo Girls"] }
+    ]
+  },
+  {
+    year: "2014",
+    shows: [
+      { name: "Pitbull", city: "Houston", venue: "Toyota Center", photographed: false, photographedArtists: ["Pitbull"], allArtists: ["Pitbull"] }
+    ]
+  },
+  {
+    year: "2013",
+    shows: [
+      { name: "Imagine Dragons", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: ["Imagine Dragons"], allArtists: ["Imagine Dragons"] }
+    ]
+  },
+  {
+    year: "2012",
+    shows: []
+  },
+  {
+    year: "2011",
+    shows: []
+  },
+  {
+    year: "2010",
+    shows: [
+      { name: "Foreigner", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: ["Foreigner"], allArtists: ["Foreigner", "Styx", "Kansas"] }
+    ]
+  }
+];
+
+// Calculate statistics
+const allShows = showsData.flatMap(yearData => yearData.shows);
+const totalShows = allShows.length;
+const photographedShows = allShows.filter(show => show.photographed).length;
+const attendedShows = allShows.filter(show => !show.photographed).length;
+---
+
+<Layout
+  title="Josh Rehders — Past Shows"
+  description="Josh Rehders is a multimedia creative specialist based in New York City, with a focus on capturing electronic music events."
+>
+
+  <main>  
+    <Header />
+    <div class="about-container">
+      <div>
+        <div class="by-the-numbers">
+          <p class="small-info-text">This page is mainly for my own reference and documentation, but maybe you'll find it interesting as well!</p>
+          <p class="numbers-text">
+            <strong>{photographedShows}</strong> shows photographed, <strong>{attendedShows}</strong> shows attended, <strong>{totalShows}</strong> total shows
+          </p>
+        </div>
+
+        <div class="filter-container">
+          <label for="show-filter">Filter Shows:</label>
+          <select id="show-filter">
+            <option value="photographed" selected>Photographed Only</option>
+            <option value="attended">Attended Only</option>
+            <option value="all">All Shows</option>
+          </select>
+        </div>
+        
+        <div class="shows-container">
+          {showsData.map(yearData => (
+            <div class="year-section">
+              <h2 class="year-header">{yearData.year}</h2>
+              {yearData.shows.length === 0 ? (
+                <p class="no-shows">No shows this year</p>
+              ) : (
+                <div class="shows-list">
+                  {yearData.shows.map(show => (
+                    <div class={`show-item ${show.photographed ? 'photographed' : 'not-photographed'}`}>
+                      <div class="show-main">
+                        <div class="show-name">{show.name}</div>
+                          <div class="show-location">
+                            <div class="show-city">{show.city}</div>
+                            <div class="show-venue">{show.venue}</div>
+                          </div>
+                        {/* {show.photographed && <span class="photo-indicator">📸</span>} */}
+                      </div>
+                      {show.photographed && show.photographedArtists && show.photographedArtists.length > 0 && (
+                        <div class="show-artists">
+                          <div class="artist-section">
+                            <span class="artist-section-title">Photographed:</span>
+                            {show.photographedArtists.map((artist: string) => (
+                              <span class="artist-tag photographed-artist">{artist}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {show.allArtists && show.allArtists.length > (show.photographedArtists?.length || 0) && (
+                        <div class="show-artists also-performing-section">
+                          <div class="artist-section">
+                            <span class="artist-section-title">
+                              {show.photographedArtists && show.photographedArtists.length > 0 ? "Other performers seen:" : "Performers:"}
+                            </span>
+                            {show.allArtists.filter(artist => !show.photographedArtists?.includes(artist)).map((artist: string) => (
+                              <span class="artist-tag other-artist">{artist}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {yearData.shows.length > 0 && !yearData.shows.some(show => show.photographed) && (
+                    <p class="no-shows no-photographed-shows">No shows photographed this year</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <style>
+    .about-container div {
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+
+      /* Media query for phone-sized screens */
+    @media (max-width: 600px) {
+      .about-container div {
+        margin-left: auto !important;
+        margin-right: auto !important;
+      }
+    }
+
+    .by-the-numbers {
+      margin-bottom: 1rem;
+      text-align: left;
+    }
+
+    .small-info-text {
+      font-size: 0.7rem;
+      color: #aaa;
+      margin: 0 0 0.25rem 0;
+    }
+
+    .numbers-text {
+      font-size: 1.1rem;
+      color: #ccc;
+      margin: 0;
+    }
+
+    .numbers-text strong {
+      color: #9395CC;
+      font-weight: bold;
+    }
+
+    @media (max-width: 768px) {
+      .numbers-text {
+        font-size: 1rem;
+      }
+    }
+
+    .filter-container {
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: auto;
+    }
+
+    #show-filter {
+      padding: 0.2rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: gray;
+    }
+
+    .year-section {
+      margin-bottom: 3rem;
+    }
+
+    .year-header {
+      font-size: 1.8rem;
+      font-weight: bold;
+      margin-bottom: 1rem;
+      border-bottom: 2px solid #333;
+      padding-bottom: 0.5rem;
+    }
+
+    .no-shows {
+      font-style: italic;
+      color: #666;
+    }
+
+    .no-photographed-shows {
+      display: block;
+    }
+
+    .no-photographed-shows.filter-hidden {
+      display: none;
+    }
+
+    .shows-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .show-item {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem;
+      transition: all 0.3s ease;
+      width: 600px;
+    }
+
+    .show-item.photographed {
+      background: #f8fff8;
+      border-color: #9395CC;
+    }
+
+    .show-item.not-photographed {
+      background: #f8f8f8;
+      opacity: 0.8;
+    }
+
+    .show-item.hidden {
+      display: none;
+    }
+
+    .show-main {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .show-name {
+      font-weight: bold;
+      font-size: 1.1rem;
+      color: #000
+    }
+
+    .show-location {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .show-city {
+      color: #444;
+      font-weight: 500;
+    }
+
+    .show-venue {
+      color: #666;
+      font-style: italic;
+    }
+
+    .show-venue:before {
+      content: "•";
+      margin-right: 0.5rem;
+      color: #ccc;
+    }
+
+    .photo-indicator {
+      margin-left: auto;
+      font-size: 1.2rem;
+    }
+
+    .show-artists {
+      margin-top: 0.5rem;
+    }
+
+    .artist-section {
+      margin-bottom: 0.5rem;
+    }
+
+    .artist-section-title {
+      font-size: 0.85rem;
+      font-weight: bold;
+      color: #555;
+      margin-right: 0.5rem;
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+
+    .artist-tag {
+      background: #e0e0e0;
+      padding: 0.2rem 0.5rem;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      color: #555;
+      margin-right: 0.5rem;
+      margin-bottom: 0.25rem;
+      display: inline-block;
+    }
+
+    .photographed-artist {
+      background: #c8e6c9;
+      color: #2e7d32;
+      font-weight: 500;
+    }
+
+    .other-artist {
+      background: #c0c0c0;
+      color: #444;
+    }
+
+    .also-performing-section {
+      display: block;
+    }
+
+    .also-performing-section.filter-hidden {
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      .show-main {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+
+      .photo-indicator {
+        margin-left: 0;
+      }
+    }
+  </style>
+
+  <script>
+    const filterSelect = document.getElementById('show-filter') as HTMLSelectElement;
+    const showItems = document.querySelectorAll('.show-item');
+    const alsoPerformingSections = document.querySelectorAll('.also-performing-section');
+    const noPhotographedMessages = document.querySelectorAll('.no-photographed-shows');
+
+    filterSelect?.addEventListener('change', (e) => {
+      const target = e.target as HTMLSelectElement;
+      const filterValue = target.value;
+      
+      showItems.forEach(item => {
+        if (filterValue === 'all') {
+          item.classList.remove('hidden');
+        } else if (filterValue === 'photographed') {
+          if (item.classList.contains('photographed')) {
+            item.classList.remove('hidden');
+          } else {
+            item.classList.add('hidden');
+          }
+        } else if (filterValue === 'attended') {
+          if (item.classList.contains('not-photographed')) {
+            item.classList.remove('hidden');
+          } else {
+            item.classList.add('hidden');
+          }
+        }
+      });
+
+      // Hide/show "also performing" sections based on filter
+      alsoPerformingSections.forEach(section => {
+        if (filterValue === 'photographed') {
+          section.classList.add('filter-hidden');
+        } else {
+          section.classList.remove('filter-hidden');
+        }
+      });
+
+      // Hide/show "no photographed shows" messages based on filter
+      noPhotographedMessages.forEach(message => {
+        if (filterValue === 'all' || filterValue === 'attended') {
+          message.classList.add('filter-hidden');
+        } else {
+          message.classList.remove('filter-hidden');
+        }
+      });
+    });
+
+    // Initialize with photographed filter
+    document.addEventListener('DOMContentLoaded', () => {
+      showItems.forEach(item => {
+        if (!item.classList.contains('photographed')) {
+          item.classList.add('hidden');
+        }
+      });
+      
+      // Initially hide "also performing" sections
+      alsoPerformingSections.forEach(section => {
+        section.classList.add('filter-hidden');
+      });
+
+      // Show "no photographed shows" messages initially (since photographed filter is default)
+      noPhotographedMessages.forEach(message => {
+        message.classList.remove('filter-hidden');
+      });
+    });
+  </script>
+
+</Layout>

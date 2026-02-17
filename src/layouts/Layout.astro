@@ -1,5 +1,6 @@
 ---
 import GA from '../components/analytics/GA.astro';
+import Footer from '../components/Footer.astro';
 
 export interface Props {
   title: string;
@@ -101,6 +102,7 @@ const dev = import.meta.env.DEV;
       });
     </script>
     <slot />
+    <Footer />
   </body>
 </html>
 
@@ -176,27 +178,77 @@ const dev = import.meta.env.DEV;
     background-color: rgb(23,23,23);
     color: #ffffff;
     font-family: "proxima-nova", sans-serif;
-    flex-direction: row; /* Default to row layout */
+    flex-direction: column;
   }
 
-  .about-container div {
+  .about-text > div {
     max-width: 800px;
     margin: 0 auto;
   }
 
-  .about-container div.profpic {
-    max-width: 30%;
+  /* Mobile: contact info first, then text, then photo */
+  .contact-info-mobile {
+    display: block;
+    order: 1;
+    text-align: left;
+    max-width: 800px;
   }
 
-  /* Media query for phone-sized screens */
-  @media (max-width: 600px) {
+  .about-text {
+    order: 2;
+    width: 100%;
+  }
+
+  .sidebar {
+    order: 3;
+    width: 100%;
+  }
+
+  .contact-info-desktop {
+    display: none;
+    text-align: left;
+  }
+
+  /* Desktop: text on left, contact info + photo on right */
+  @media (min-width: 601px) {
     .about-container {
-      flex-direction: column; /* Change to column layout */
+      flex-direction: row;
+      gap: 2rem;
+      align-items: flex-start !important;
     }
 
-    .about-container div.profpic {
-      max-width: 100%; /* Adjust width to 100% */
-      margin-top: 20px; /* Add some spacing above the profpic */
+    .contact-info-mobile {
+      display: none;
+    }
+
+    .about-text {
+      flex: 1;
+      order: 1;
+    }
+
+    .sidebar {
+      flex: 0 0 auto;
+      order: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      max-width: 30%;
+      width: auto;
+    }
+
+    .contact-info-desktop {
+      display: block;
+      margin: 0;
+    }
+
+    .sidebar .profpic {
+      margin: 0 !important;
+      max-width: 100%;
+    }
+
+    .sidebar .profpic img {
+      width: 100%;
+      height: auto;
     }
   }
 

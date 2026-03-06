@@ -1,13 +1,27 @@
 ---
 import SocialIcons from './SocialIcons.astro';
 
-const menuItems = [
+interface Props {
+  extended?: boolean;
+}
+
+const { extended = false } = Astro.props;
+
+const baseMenuItems = [
   { name: 'CONCERT PHOTO', href: '/' },
   { name: 'CONCERT VIDEO', href: '/video/' },
   { name: 'BTS/PORTRAIT', href: '/bts/' },
   { name: 'SPORTS', href: '/sports/' },
-  { name: 'CONTACT', href: '/about/' },
 ];
+
+const extendedMenuItems = [
+  { name: 'LIFESTYLE', href: '/lifestyle/' },
+  { name: 'EVENTS', href: '/events/' },
+];
+
+const menuItems = extended 
+  ? [...baseMenuItems, ...extendedMenuItems, { name: 'CONTACT', href: '/about/' }]
+  : [...baseMenuItems, { name: 'CONTACT', href: '/about/' }];
 
 console.log(Astro.url.pathname)
 ---

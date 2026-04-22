@@ -1,0 +1,20 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Gallery from "../components/Gallery.astro";
+import PhotoGallery from "../components/PhotoGallery.astro";
+import AstroPhotoGallery from "../components/AstroPhotoGallery.astro";
+const dev = import.meta.env.DEV;
+---
+
+<Layout
+  title="Josh Rehders — Multimedia Creative Specialist"
+  description="Josh Rehders is a multimedia creative specialist based in New York City, with a focus on capturing electronic music events."
+>
+
+  <main>  
+    <Header />
+    <PhotoGallery folder=music/>
+  </main>
+
+</Layout>

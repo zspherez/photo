@@ -20,8 +20,8 @@ const extendedMenuItems = [
 ];
 
 const menuItems = extended 
-  ? [...baseMenuItems, ...extendedMenuItems, { name: 'CONTACT', href: '/about/' }]
-  : [...baseMenuItems, { name: 'CONTACT', href: '/about/' }];
+  ? [...baseMenuItems, ...extendedMenuItems, { name: 'ABOUT', href: '/about/' }]
+  : [...baseMenuItems, { name: 'ABOUT', href: '/about/' }];
 
 console.log(Astro.url.pathname)
 ---

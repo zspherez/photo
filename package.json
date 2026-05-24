@@ -15,7 +15,7 @@
     "@astrojs/partytown": "^2.1.4",
     "@astrojs/tailwind": "^6.0.0",
     "@iconify/tools": "^4.0.4",
-    "astro": "^5.4.3",
+    "astro": "^5.18.1",
     "astro-cloudinary": "^1.3.2",
     "astro-icon": "^1.1.0",
     "cloudinary": "^1.33.0",

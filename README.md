@@ -1,4 +1,4 @@
-# rehders.photos
+# Rehders Photos Portfolio Site
 
 Source for my concert, sports, and event photography portfolio, hosted at both [rehders.photos](https://rehders.photos) and [rehde.rs/photo](https://rehde.rs/photo).
 

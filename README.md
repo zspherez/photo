@@ -17,26 +17,31 @@ Source for my concert, sports, and event photography portfolio, hosted at both [
 Galleries aren't authored as JSON or markdown — they're pulled directly from Cloudinary folders at build time. Each page maps to one folder (e.g. `index.astro` → `concerts`, `sports.astro` → `sports`). Add an image to a folder in Cloudinary, push to `main`, and the new image shows up.
 
 ```mermaid
-flowchart LR
+flowchart TD
     subgraph author["Authoring"]
+        direction LR
         upload[Upload to<br/>Cloudinary folder]
         commit[git push to main]
     end
 
     subgraph build["CI build (runs on every push)"]
+        direction LR
         astro["astro build"]
         api[Cloudinary<br/>Admin API]
+        dist[dist/]
         astro -->|"search folder:concerts"| api
-        api -->|public_ids, dimensions, alt| astro
-        astro -->|static HTML + CDN URLs| dist[dist/]
+        api -->|public_ids, dimensions| astro
+        astro -->|static HTML + CDN URLs| dist
     end
 
     subgraph hosts["Hosts"]
+        direction LR
         cf[Cloudflare Pages<br/>rehders.photos]
         gh[GitHub Pages<br/>rehde.rs/photo]
     end
 
     subgraph runtime["Visitor's browser"]
+        direction LR
         html[Static HTML]
         cdn[Cloudinary CDN<br/>res.cloudinary.com]
         gtm[GA via Partytown<br/>web worker]

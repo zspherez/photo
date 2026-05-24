@@ -1,6 +1,6 @@
 # rehders.photos
 
-Source for [rehders.photos](https://rehders.photos) — my concert, sports, and event photography portfolio.
+Source for my concert, sports, and event photography portfolio, hosted at both [rehders.photos](https://rehders.photos) and [rehde.rs/photo](https://rehde.rs/photo).
 
 ## Stack
 
@@ -8,7 +8,9 @@ Source for [rehders.photos](https://rehders.photos) — my concert, sports, and 
 - **[Tailwind](https://tailwindcss.com)** for styling
 - **[Cloudinary](https://cloudinary.com)** as the media library + CDN
 - **[Partytown](https://partytown.builder.io)** to offload Google Analytics into a web worker
-- **GitHub Actions → GitHub Pages** for the deploy (custom domain via `public/CNAME`)
+- **Two deploys from one repo**:
+  - **Cloudflare Pages** → [rehders.photos](https://rehders.photos), built via `@astrojs/cloudflare` on every push to `main`
+  - **GitHub Actions → GitHub Pages** → [rehde.rs/photo](https://rehde.rs/photo) (custom domain via `public/CNAME`)
 
 ## Architecture
 
@@ -21,12 +23,17 @@ flowchart LR
         commit[git push to main]
     end
 
-    subgraph build["GitHub Actions build"]
+    subgraph build["CI build (runs on every push)"]
         astro["astro build"]
         api[Cloudinary<br/>Admin API]
-        astro -->|"search folder:concerts<br/>"| api
+        astro -->|"search folder:concerts"| api
         api -->|public_ids, dimensions, alt| astro
         astro -->|static HTML + CDN URLs| dist[dist/]
+    end
+
+    subgraph hosts["Hosts"]
+        cf[Cloudflare Pages<br/>rehders.photos]
+        gh[GitHub Pages<br/>rehde.rs/photo]
     end
 
     subgraph runtime["Visitor's browser"]
@@ -39,7 +46,10 @@ flowchart LR
 
     upload --> api
     commit --> astro
-    dist -->|deploy-pages| html
+    dist --> cf
+    dist --> gh
+    cf --> html
+    gh --> html
 ```
 
 The Cloudinary `api_secret` is only used during the Actions build — it never ends up in the deployed HTML/JS. Output URLs use Cloudinary's auto-transform endpoints (`f_auto,q_auto`), so each browser gets an appropriately sized/encoded image.
@@ -69,5 +79,7 @@ The two `PUBLIC_*` vars are inlined into the client bundle (Astro convention); t
 - `src/components/` — gallery variants (`PhotoGallery`, `VideoGallery`, `Gallery`), header, footer, contact, social
 - `src/layouts/Layout.astro` — shared page shell (head tags, OG, fonts)
 - `src/icons/` — SVG icons inlined via `?raw`
-- `public/` — fonts, PDFs (resume / rates / cover), favicon, `CNAME`
-- `.github/workflows/deploy.yml` — build + GitHub Pages deploy
+- `public/` — fonts, PDFs (resume / rates / cover), favicon, `CNAME` (the GitHub Pages custom domain)
+- `.github/workflows/deploy.yml` — GitHub Pages build & deploy
+- `.nvmrc` — pins Node version for the Cloudflare Pages build
+- `astro.config.mjs` — uses `@astrojs/cloudflare` for the Cloudflare Pages deploy

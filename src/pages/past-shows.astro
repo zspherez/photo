@@ -22,7 +22,7 @@ const showsData = [
       { name: "Experts Only Festival Afters", city: "New York City", venue: "Brooklyn Storehouse", photographed: true, photographedArtists: ["Eve Lauren"], allArtists: ["Eve Lauren", "Tini Gessler", "AYYBO", "AYYBO B2B Green Velvet", "Green Velvet", "Green Velvet B2B John Summit", "Green Velvet B3B John Summit B3B Layton Giordani", "John Summit B2B Layton Giordani", "John Summit B3B Layton Giordani B3B Tini Gessler", "Layton Giordani B2B Tini Gessler"] }, //afters
       { name: "Experts Only Festival", city: "New York City", venue: "Randalls Island", photographed: true, photographedArtists: ["Eve Lauren",], allArtists: ["Eve Lauren", "Enamour B2B Weska", "Layton Giordani B2B Green Velvet", "John Summit"] },
       { name: "Mau P Open2Close", city: "New York City", venue: "Brooklyn Storehouse", photographed: false, photographedArtists: [], allArtists: ["Mau P"] },
-      { name: "GRYFFIN", city: "New York City", venue: "Great Hall", photographed: true, photographedArtists: ["Seth Hills"], allArtists: ["GRYFFIN", "Seth Hills"] },
+      { name: "GRYFFIN: PULSE", city: "New York City", venue: "Great Hall", photographed: true, photographedArtists: ["Seth Hills"], allArtists: ["GRYFFIN", "Seth Hills"] },
       { name: "ARC Music Festival", city: "Chicago", venue: "Union Park", photographed: true, photographedArtists: ["Luke Dean B2B Matisa", "It's Murph"], allArtists: ["GENESI", "Notion", "Interplanetary Criminal B2B Malugi", "Hamdi B2B Riordan", "Luke Alessi B2B Matisa", "It's Murph", "Adam Beyer B2B Layton Giordani", "Fisher", "Skepta Mas Tiempo B2B Green Velvet", "Riordan B2B Obskur", "AYYBO", "Max Styler", "Eli Brown", "John Summit"] },
       { name: "Ranger Trucco ARC Pre-party", city: "Chicago", venue: "JP Grazianos", photographed: false, photographedArtists: [], allArtists: ["Ranger Trucco"] },
       { name: "Lollapalooza", city: "Chicago", venue: "Grant Park", photographed: true, photographedArtists: ["Daniel Allan"], allArtists: ["Dom Dolla", "Martin Garrix", "GRYFFIN", "Daniel Allan", "Mau P", "Cloonee", "Gracie Abrams", "Levity", "Two Friends", "Rüfüs Du Sol", "Barry Can't Swim"] },
@@ -32,7 +32,7 @@ const showsData = [
       { name: "Max Styler", city: "New York City", venue: "Ruins at Knockdown Center", photographed: false, photographedArtists: [], allArtists: ["Max Styler"] },
       { name: "Project Glow", city: "DC", venue: "RFK Festival Grounds", photographed: false, photographedArtists: [], allArtists: ["Kaskade", "Chris Lake", "Subtronics", "Wooli", "Odd Mob", "Matroda", "Loud Luxury"] },
       { name: "SEUNG", city: "New York City", venue: "Music for a While", photographed: true, photographedArtists: ["SEUNG"], allArtists: ["SEUNG"] },
-      { name: "GRYFFIN", city: "Nashville", venue: "Pinnacle", photographed: true, photographedArtists: ["GRYFFIN"], allArtists: ["GRYFFIN"] },
+      { name: "GRYFFIN", city: "Nashville", venue: "Pinnacle", photographed: true, photographedArtists: ["GRYFFIN"], allArtists: ["GRYFFIN", "LAVERN", "Cheyenne Giles"] },
       { name: "Daniel Allan", city: "New York City", venue: "Elsewhere", photographed: true, photographedArtists: ["Daniel Allan"], allArtists: ["Daniel Allan"] },
       { name: "ZAY", city: "Nashville", venue: "Night We Met", photographed: true, photographedArtists: ["ZAY", "ALEX RAYNE", "Peterson B2B Lucas."], allArtists: ["ZAY", "ALEX RAYNE", "Peterson B2B Lucas."] },
       { name: "Max Styler", city: "Aspen", venue: "Belly Up", photographed: true, photographedArtists: ["Max Styler"], allArtists: ["Max Styler"] },
@@ -57,7 +57,7 @@ const showsData = [
       { name: "Forester", city: "New York City", venue: "Governors Island", photographed: true, photographedArtists: ["Forester"], allArtists: ["Forester"] },
       { name: "Mau P", city: "New York City", venue: "99 Scott", photographed: false, photographedArtists: [], allArtists: ["Mau P"] },
       { name: "Disclosure B2B Green Velvet ARC Afters", city: "Chicago", venue: "Radius", photographed: false, photographedArtists: [], allArtists: ["Disclosure B2B Green Velvet"] },
-      { name: "ARC", city: "Chicago", venue: "Union Park", photographed: true, photographedArtists: ["Jenn Getz & Alfie", "Avalon Emerson"], allArtists: ["Barry Can't Swim", "Salute B2B Barry Can't Swim", "Mau P", "Riordan", "Green Velvet", "Gorgon City", "Jenn Getz & Alfie", "Avalon Emerson", "Mau P B2B Green Velvet"] },
+      { name: "ARC Music Festival", city: "Chicago", venue: "Union Park", photographed: true, photographedArtists: ["Jenn Getz & Alfie", "Avalon Emerson"], allArtists: ["Barry Can't Swim", "Salute B2B Barry Can't Swim", "Mau P", "Riordan", "Green Velvet", "Gorgon City", "Jenn Getz & Alfie", "Avalon Emerson", "Mau P B2B Green Velvet"] },
       { name: "ZAY", city: "New York City", venue: "Summer Club", photographed: true, photographedArtists: ["ZAY"], allArtists: ["ZAY"] },
       { name: "Taylor Swift", city: "Zurich", venue: "Stadion Letzigrund", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
       { name: "Ian Asher", city: "Houston", venue: "NOTO", photographed: true, photographedArtists: ["Ian Asher"], allArtists: ["Ian Asher"] },
@@ -71,7 +71,7 @@ const showsData = [
     shows: [
       { name: "Travis Scott", city: "Nashville", venue: "Bridgestone Arena", photographed: false, photographedArtists: [], allArtists: ["Travis Scott"] },
       { name: "Lights on the Lawn", city: "Nashville", venue: "Alumni Lawn", photographed: true, photographedArtists: ["ALEX RAYNE"], allArtists: ["Loud Luxury", "ALEX RAYNE"] },
-      { name: "ARCtic Monkeys", city: "Nashville", venue: "Ascend Ampitheatre", photographed: true, photographedArtists: ["ARCtic Monkeys"], allArtists: ["ARCtic Monkeys"] },
+      { name: "Arctic Monkeys", city: "Nashville", venue: "Ascend Ampitheatre", photographed: true, photographedArtists: ["Arctic Monkeys"], allArtists: ["AArctic Monkeys"] },
       { name: "Taylor Swift", city: "Seattle", venue: "Lumen Field", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
       { name: "Taylor Swift", city: "Seattle", venue: "Lumen Field", photographed: false, photographedArtists: [], allArtists: ["Taylor Swift"] },
       { name: "Jason Mraz", city: "Seattle", venue: "Chateau Ste. Michelle Winery", photographed: true, photographedArtists: ["Jason Mraz"], allArtists: ["Jason Mraz"] },
@@ -88,6 +88,7 @@ const showsData = [
       { name: "Peter McPoland", city: "Nashville", venue: "Bridgestone Arena", photographed: true, photographedArtists: ["Peter McPoland"], allArtists: ["Peter McPoland", "Twenty One Pilots"] },
       { name: "Live on the Green", city: "Nashville", venue: "Public Square Park", photographed: true, photographedArtists: ["The Criticals", "COIN", "Devon Gilfillian"], allArtists: ["The Criticals", "COIN", "Devon Gilfillian"] },
       { name: "Benee", city: "Seattle", venue: "Showbox", photographed: false, photographedArtists: [], allArtists: ["Benee"] },
+      { name: "AJR", city: "Seattle", venue: "White River Amphitheatre", photographed: false, photographedArtists: [], allArtists: ["AJR"] },
       { name: "Coldplay", city: "Houston", venue: "NRG Stadium", photographed: false, photographedArtists: [], allArtists: ["Coldplay"] },
       { name: "Tame Impala", city: "Nashville", venue: "Bridgestone Arena", photographed: true, photographedArtists: ["Tame Impala"], allArtists: ["Tame Impala"] },
       { name: "Rites of Spring", city: "Nashville", venue: "Alumni Lawn", photographed: false, photographedArtists: [], allArtists: ["2 Chainz", "Waka Flocka", "GAYLE"] },
@@ -97,6 +98,7 @@ const showsData = [
   {
     year: "2021",
     shows: [
+      { name: "The Grand Ole Opry", city: "Nashville", venue: "The Grand Ole Opry", photographed: false, photographedArtists: [], allArtists: ["Jelly Roll", "Russell Dickerson", "John Conlee", "Sister Sadie", "Jeanie Seely", "Steven Curtis Chapman", "Killer Beaz", "Sara Evans"] },
       { name: "Music Midtown", city: "Atlanta", venue: "Piedmont Park", photographed: false, photographedArtists: [], allArtists: ["Surfaces", "Maroon 5", "Jonas Brothers", "MGK", "AJR", "Bleachers"] },
       { name: "All Time Low", city: "Nashville", venue: "Marathon Music Works", photographed: true, photographedArtists: ["All Time Low"], allArtists: ["All Time Low"] }
 

@@ -61,6 +61,36 @@ const dev = import.meta.env.DEV;
     <meta name="twitter:image" content={share_image} />
     <meta name="twitter:image:alt" content="Josh Rehders is a concert and sports photographer based in New York City." />
 
+    <!-- Counterscale (self-hosted on Cloudflare Workers + Analytics Engine).
+         Dashboard: https://analytics.rehde.rs -->
+    <script
+      is:inline
+      id="counterscale-script"
+      data-site-id="rehders-photos"
+      src="https://analytics.rehde.rs/tracker.js"
+      defer
+    ></script>
+    <!-- After Counterscale has captured UTM params, strip them from the URL bar
+         so visitors don't see ?utm_source=… persisting in their address bar.
+         Binds both `load` (full page navigation) and `astro:page-load` (Astro
+         view transitions) so this works whether or not <ClientRouter /> is in
+         use here. Running both on initial load is a harmless no-op the second
+         time around (UTMs already cleaned). -->
+    <script is:inline>
+      const stripTrackingParams = () => {
+        const url = new URL(window.location.href);
+        const trackingKeys = [...url.searchParams.keys()].filter(k =>
+          k.startsWith('utm_') || k === 'ref' || k === 'source'
+        );
+        if (trackingKeys.length > 0) {
+          trackingKeys.forEach(k => url.searchParams.delete(k));
+          history.replaceState({}, '', url.toString());
+        }
+      };
+      window.addEventListener('load', stripTrackingParams);
+      document.addEventListener('astro:page-load', stripTrackingParams);
+    </script>
+
     <script is:inline async src="https://www.googletagmanager.com/gtag/js?id=G-5Y13N2RH7S" type="text/partytown"></script>
     <script
     is:inline

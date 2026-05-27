@@ -48,8 +48,8 @@ const filteredResources = search.resources as CloudinaryResource[];
       data-alt={CloudinaryResource.context?.alt || ""}
       onclick="setFullscreen(this)"
       ontouchend="if (!isScrolling) setFullscreen(this)"
-      class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"
-      style={`flex-grow: ${CloudinaryResource.width * 400 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 400 / CloudinaryResource.height}px;`}
+      class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto max-w-[calc(50%-4px)] sm:max-w-none"
+      style={`flex-grow: ${CloudinaryResource.width * 350 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 350 / CloudinaryResource.height}px;`}
     >
 
       <!-- placeholder for proper grid sizing -->

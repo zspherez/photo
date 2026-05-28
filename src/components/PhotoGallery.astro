@@ -6,7 +6,8 @@ import right from '../icons/chevron-right-solid.svg?raw'
 import Icon from '../components/Icon.astro'
 
 export interface Props {
-  folder: string;
+  folder?: string;
+  folders?: string[];
   filter?: string;
 }
 
@@ -26,15 +27,30 @@ cloudinary.config({
   secure: true,
 });
 
-// Only fetch images (no videos)
-const search = await cloudinary.search
-  .expression(`folder:${Astro.props.folder} AND resource_type:image`)
-  .with_field("context")
-  .sort_by("display_name", "asc")
-  .max_results(500)
-  .execute();
+// Only fetch images (no videos). Supports a single folder or multiple folders interleaved.
+const folders = Astro.props.folders ?? (Astro.props.folder ? [Astro.props.folder] : []);
 
-const filteredResources = search.resources as CloudinaryResource[];
+const searches = await Promise.all(
+  folders.map((folder) =>
+    cloudinary.search
+      .expression(`folder:${folder} AND resource_type:image`)
+      .with_field("context")
+      .sort_by("display_name", "asc")
+      .max_results(500)
+      .execute()
+  )
+);
+
+const lists = searches.map((s) => s.resources as CloudinaryResource[]);
+
+// Interleave: take one from each folder in turn until all are exhausted.
+const filteredResources: CloudinaryResource[] = [];
+const maxLen = Math.max(0, ...lists.map((l) => l.length));
+for (let i = 0; i < maxLen; i++) {
+  for (const list of lists) {
+    if (i < list.length) filteredResources.push(list[i]);
+  }
+}
 ---
 
 <div class="flex flex-wrap m-0.5">

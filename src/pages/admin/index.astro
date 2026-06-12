@@ -1,0 +1,239 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { verifyAccess } from "../../lib/auth";
+import { searchFolder } from "../../lib/cloudinary-admin";
+import { buildPrintImageUrl, THUMB_WIDTH } from "../../lib/cloudinary-image";
+import {
+  fetchPrintsViaD1,
+  humanizePublicId,
+  type PrintInfo,
+} from "../../lib/prints";
+
+// On-demand (SSR) route — runs on the Cloudflare deploy. On the static GitHub
+// Pages mirror there is no worker, so this page 404s there (intended).
+export const prerender = false;
+
+const folder = "prints";
+const runtime = (Astro.locals as any)?.runtime?.env as CloudflareEnv | undefined;
+
+interface Card {
+  publicId: string;
+  thumb: string;
+  current: PrintInfo;
+  placeholderTitle: string;
+}
+
+let available = false;
+let authed = false;
+let errorMessage = "";
+let cards: Card[] = [];
+
+if (runtime?.DB) {
+  available = true;
+  try {
+    const user = await verifyAccess(Astro.request, runtime as any);
+    authed = Boolean(user);
+
+    if (authed) {
+      const cloudName = runtime.PUBLIC_CLOUDINARY_CLOUD_NAME!;
+      const apiKey = runtime.PUBLIC_CLOUDINARY_API_KEY!;
+      const apiSecret = runtime.SECRET_CLOUDINARY_API_KEY!;
+
+      const [resources, metadata] = await Promise.all([
+        searchFolder({ cloudName, apiKey, apiSecret }, folder),
+        fetchPrintsViaD1(runtime.DB),
+      ]);
+
+      cards = await Promise.all(
+        resources.map(async (r) => {
+          const thumb = await buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
+            width: THUMB_WIDTH,
+            watermark: "",
+            sign: true,
+          });
+          return {
+            publicId: r.public_id,
+            thumb,
+            current: metadata[r.public_id] ?? {},
+            placeholderTitle: humanizePublicId(r.public_id),
+          };
+        })
+      );
+    }
+  } catch (err) {
+    errorMessage = (err as Error).message;
+  }
+}
+
+function sizesToText(info: PrintInfo): string {
+  if (!info.sizes || !info.sizes.length) return "";
+  return info.sizes.map((s) => `${s.label} | ${s.price}`).join("\n");
+}
+---
+
+<Layout title="Print Dashboard" description="Manage print pricing and descriptions." hidden={true}>
+  <main class="mx-auto max-w-5xl px-4 py-10">
+    <h1 class="text-2xl font-semibold">Print Dashboard</h1>
+
+    {!available && (
+      <p class="mt-4 text-neutral-400">
+        The print dashboard is only available on the canonical site
+        (<a class="underline" href="https://rehders.photos/admin/">rehders.photos/admin</a>).
+      </p>
+    )}
+
+    {available && !authed && (
+      <p class="mt-4 text-red-400">
+        Not authenticated. This page must be reached through Cloudflare Access.
+        {errorMessage && <span class="block text-neutral-500">{errorMessage}</span>}
+      </p>
+    )}
+
+    {available && authed && (
+      <>
+        <p class="mt-2 text-sm text-neutral-400">
+          Edit each print's title, description and pricing. Changes save to the
+          database immediately; the public gallery updates on the next site build.
+        </p>
+        {errorMessage && <p class="mt-2 text-red-400">{errorMessage}</p>}
+        {cards.length === 0 && (
+          <p class="mt-6 text-neutral-400">
+            No images found in the <code>{folder}</code> Cloudinary folder.
+          </p>
+        )}
+
+        <div class="mt-8 space-y-6">
+          {cards.map((card) => (
+            <form
+              class="print-card grid grid-cols-1 gap-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4 md:grid-cols-[180px_1fr]"
+              data-public-id={card.publicId}
+              onsubmit="return savePrint(event, this)"
+            >
+              <div>
+                <img
+                  src={card.thumb}
+                  alt={card.placeholderTitle}
+                  class="w-full rounded object-cover"
+                  draggable="false"
+                />
+                <p class="mt-2 break-all text-xs text-neutral-500">{card.publicId}</p>
+              </div>
+
+              <div class="space-y-3">
+                <label class="block">
+                  <span class="text-xs uppercase tracking-wide text-neutral-400">Title</span>
+                  <input
+                    name="title"
+                    type="text"
+                    value={card.current.title ?? ""}
+                    placeholder={card.placeholderTitle}
+                    class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                  />
+                </label>
+
+                <label class="block">
+                  <span class="text-xs uppercase tracking-wide text-neutral-400">Description</span>
+                  <textarea
+                    name="description"
+                    rows="2"
+                    class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                  >{card.current.description ?? ""}</textarea>
+                </label>
+
+                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <label class="block">
+                    <span class="text-xs uppercase tracking-wide text-neutral-400">
+                      Headline price (optional)
+                    </span>
+                    <input
+                      name="price"
+                      type="text"
+                      value={card.current.price ?? ""}
+                      placeholder="$120"
+                      class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                    />
+                  </label>
+
+                  <label class="block">
+                    <span class="text-xs uppercase tracking-wide text-neutral-400">
+                      Sizes — one per line: <code>label | price</code>
+                    </span>
+                    <textarea
+                      name="sizes"
+                      rows="3"
+                      placeholder={'8×10" | $45\n16×24" | $120'}
+                      class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                    >{sizesToText(card.current)}</textarea>
+                  </label>
+                </div>
+
+                <div class="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    class="rounded bg-slate-100 px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-white"
+                  >
+                    Save
+                  </button>
+                  <span class="status text-sm text-neutral-400"></span>
+                </div>
+              </div>
+            </form>
+          ))}
+        </div>
+      </>
+    )}
+  </main>
+</Layout>
+
+<script is:inline>
+  function parseSizes(text) {
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const sep = line.includes("|") ? "|" : "=";
+        const [label, price] = line.split(sep);
+        return { label: (label || "").trim(), price: (price || "").trim() };
+      })
+      .filter((s) => s.label && s.price);
+  }
+
+  async function savePrint(event, form) {
+    event.preventDefault();
+    const status = form.querySelector(".status");
+    status.textContent = "Saving…";
+    status.className = "status text-sm text-neutral-400";
+
+    const field = (name) => form.elements.namedItem(name).value;
+    const payload = {
+      public_id: form.dataset.publicId,
+      title: field("title"),
+      description: field("description"),
+      price: field("price"),
+      sizes: parseSizes(field("sizes")),
+    };
+
+    try {
+      const res = await fetch("/api/prints", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        status.textContent = "Saved ✓";
+        status.className = "status text-sm text-green-400";
+      } else {
+        status.textContent = data.error || "Error";
+        status.className = "status text-sm text-red-400";
+      }
+    } catch (err) {
+      status.textContent = String(err);
+      status.className = "status text-sm text-red-400";
+    }
+    return false;
+  }
+
+  window.savePrint = savePrint;
+</script>

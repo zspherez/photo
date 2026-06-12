@@ -1,0 +1,318 @@
+---
+import { v2 as cloudinary } from "cloudinary";
+import Icon from "./Icon.astro";
+import {
+  buildPrintImageUrl,
+  GRID_WIDTH,
+  ENLARGED_WIDTH,
+} from "../lib/cloudinary-image";
+import {
+  fetchPrintsViaRest,
+  resolvePrint,
+  type PrintInfo,
+} from "../lib/prints";
+
+export interface Props {
+  /** Cloudinary folder to pull prints from. */
+  folder?: string;
+  /** Watermark text baked into preview images. */
+  watermark?: string;
+}
+
+interface CloudinaryResource {
+  public_id: string;
+  width: number;
+  height: number;
+  context?: { custom?: Record<string, string> } & Record<string, string>;
+}
+
+const { folder = "prints", watermark = "rehders.photos" } = Astro.props;
+
+const cloudName = import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME;
+const apiSecret = import.meta.env.SECRET_CLOUDINARY_API_KEY;
+
+cloudinary.config({
+  cloud_name: cloudName,
+  api_key: import.meta.env.PUBLIC_CLOUDINARY_API_KEY,
+  api_secret: apiSecret,
+  secure: true,
+});
+
+const search = await cloudinary.search
+  .expression(`folder:${folder} AND resource_type:image`)
+  .with_field("context")
+  .sort_by("display_name", "asc")
+  .max_results(500)
+  .execute();
+
+const resources = (search.resources ?? []) as CloudinaryResource[];
+
+// Build-time metadata snapshot from D1 (REST). Empty {} if unconfigured.
+const metadata = await fetchPrintsViaRest();
+
+// Sign URLs when we have a secret; otherwise fall back to unsigned (dev).
+const sign = Boolean(apiSecret);
+
+function priceSummary(info: PrintInfo): string | null {
+  if (info.sizes && info.sizes.length) {
+    if (info.sizes.length === 1) return info.sizes[0].price;
+    return `from ${info.sizes[0].price}`;
+  }
+  return info.price ?? null;
+}
+
+const items = await Promise.all(
+  resources.map(async (r) => {
+    const context = (r.context?.custom ?? r.context) as
+      | Record<string, string>
+      | undefined;
+    const info = resolvePrint(r.public_id, metadata[r.public_id], context);
+    const [gridUrl, enlargedUrl] = await Promise.all([
+      buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
+        width: GRID_WIDTH,
+        watermark,
+        sign,
+      }),
+      buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
+        width: ENLARGED_WIDTH,
+        watermark,
+        sign,
+      }),
+    ]);
+    return {
+      width: r.width,
+      height: r.height,
+      gridUrl,
+      enlargedUrl,
+      title: info.title,
+      description: info.description,
+      sizes: info.sizes ?? null,
+      price: info.price ?? null,
+      priceSummary: priceSummary(info),
+    };
+  })
+);
+---
+
+<div class="flex flex-wrap m-0.5 select-none">
+  {
+    items.map((item, index) => (
+      <div
+        class="print-tile group relative m-0.5 cursor-pointer overflow-hidden max-w-[calc(50%-4px)] sm:max-w-none"
+        data-index={index}
+        style={`flex-grow: ${(item.width * 350) / item.height}; flex-basis: ${(item.width * 350) / item.height}px;`}
+        onclick="openPrint(this)"
+      >
+        {/* aspect-ratio spacer */}
+        <div class="block" style={`padding-bottom: ${(item.height / item.width) * 100}%`} />
+
+        <img
+          src={item.gridUrl}
+          alt={item.title}
+          loading={index <= 8 ? "eager" : "lazy"}
+          draggable="false"
+          oncontextmenu="return false"
+          class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
+        />
+
+        {/* hover overlay: title + description + price */}
+        <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          <h3 class="text-base font-semibold leading-tight text-white drop-shadow">
+            {item.title}
+          </h3>
+          {item.description && (
+            <p class="clamp-2 mt-1 text-sm text-neutral-200 drop-shadow">
+              {item.description}
+            </p>
+          )}
+          {item.priceSummary && (
+            <p class="mt-2 text-sm font-semibold tracking-wide text-white drop-shadow">
+              {item.priceSummary}
+            </p>
+          )}
+        </div>
+      </div>
+    ))
+  }
+</div>
+
+{/* ───────────────── Enlarged view (custom lightbox) ───────────────── */}
+<div
+  id="print-lightbox"
+  class="fixed inset-0 z-50 hidden items-stretch justify-center bg-black/95 backdrop-blur-sm md:items-center"
+  aria-hidden="true"
+>
+  <div class="relative flex h-full w-full flex-col md:flex-row">
+    {/* image */}
+    <div class="relative flex flex-1 items-center justify-center overflow-hidden p-2 md:p-8">
+      <img
+        id="print-lightbox-img"
+        src=""
+        alt=""
+        draggable="false"
+        oncontextmenu="return false"
+        class="max-h-full max-w-full select-none object-contain"
+      />
+    </div>
+
+    {/* metadata panel */}
+    <aside
+      class="w-full shrink-0 overflow-y-auto border-t border-neutral-800 bg-neutral-950/90 p-6 text-slate-100 md:w-96 md:border-l md:border-t-0"
+    >
+      <h2 id="print-lightbox-title" class="text-2xl font-semibold leading-tight"></h2>
+      <p id="print-lightbox-desc" class="mt-3 text-sm leading-relaxed text-neutral-300"></p>
+
+      <div id="print-lightbox-pricing" class="mt-6 border-t border-neutral-800 pt-4">
+        <h3 class="text-xs font-semibold uppercase tracking-widest text-neutral-400">
+          Prints
+        </h3>
+        <ul id="print-lightbox-sizes" class="mt-3 space-y-2 text-sm"></ul>
+        <p id="print-lightbox-price" class="mt-2 hidden text-lg font-semibold"></p>
+      </div>
+
+      <a
+        id="print-lightbox-inquire"
+        href="#"
+        class="mt-6 inline-block rounded-full bg-slate-100 px-5 py-2 text-sm font-semibold text-neutral-900 transition-colors hover:bg-white"
+      >
+        Inquire to purchase
+      </a>
+    </aside>
+
+    {/* controls */}
+    <button
+      type="button"
+      onclick="closePrint()"
+      class="absolute left-3 top-3 z-10 rounded-full bg-neutral-800/70 p-3 hover:bg-neutral-700"
+    >
+      <Icon name="x" />
+      <span class="sr-only">close</span>
+    </button>
+    <button
+      type="button"
+      onclick="stepPrint(-1)"
+      class="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-neutral-800/70 p-3 hover:bg-neutral-700"
+    >
+      <Icon name="left" />
+      <span class="sr-only">previous</span>
+    </button>
+    <button
+      type="button"
+      onclick="stepPrint(1)"
+      class="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-neutral-800/70 p-3 hover:bg-neutral-700 md:right-[25rem]"
+    >
+      <Icon name="right" />
+      <span class="sr-only">next</span>
+    </button>
+  </div>
+</div>
+
+<script define:vars={{ items, inquireEmail: "josh@rehders.photos" }} is:inline>
+  const PRINTS = items;
+  let currentIndex = 0;
+
+  function renderPricing(item) {
+    const sizesEl = document.getElementById("print-lightbox-sizes");
+    const priceEl = document.getElementById("print-lightbox-price");
+    sizesEl.innerHTML = "";
+    priceEl.classList.add("hidden");
+
+    if (item.sizes && item.sizes.length) {
+      for (const s of item.sizes) {
+        const li = document.createElement("li");
+        li.className = "flex items-baseline justify-between gap-4 border-b border-neutral-800/60 pb-2";
+        const label = document.createElement("span");
+        label.className = "text-neutral-300";
+        label.textContent = s.label;
+        const price = document.createElement("span");
+        price.className = "font-semibold";
+        price.textContent = s.price;
+        li.append(label, price);
+        sizesEl.appendChild(li);
+      }
+    } else if (item.price) {
+      priceEl.textContent = item.price;
+      priceEl.classList.remove("hidden");
+    }
+  }
+
+  function showPrint(index) {
+    const item = PRINTS[index];
+    if (!item) return;
+    currentIndex = index;
+
+    const img = document.getElementById("print-lightbox-img");
+    img.src = item.enlargedUrl;
+    img.alt = item.title;
+    document.getElementById("print-lightbox-title").textContent = item.title;
+
+    const descEl = document.getElementById("print-lightbox-desc");
+    descEl.textContent = item.description || "";
+    descEl.style.display = item.description ? "" : "none";
+
+    renderPricing(item);
+
+    const inquire = document.getElementById("print-lightbox-inquire");
+    const subject = encodeURIComponent(`Print inquiry: ${item.title}`);
+    inquire.href = `mailto:${inquireEmail}?subject=${subject}`;
+  }
+
+  function openPrint(tile) {
+    const index = Number(tile.dataset.index);
+    showPrint(index);
+    const lb = document.getElementById("print-lightbox");
+    lb.classList.remove("hidden");
+    lb.classList.add("flex");
+    lb.setAttribute("aria-hidden", "false");
+    document.body.classList.add("overflow-hidden");
+  }
+
+  function closePrint() {
+    const lb = document.getElementById("print-lightbox");
+    lb.classList.add("hidden");
+    lb.classList.remove("flex");
+    lb.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("overflow-hidden");
+  }
+
+  function stepPrint(delta) {
+    const next = (currentIndex + delta + PRINTS.length) % PRINTS.length;
+    showPrint(next);
+  }
+
+  // expose for inline handlers
+  window.openPrint = openPrint;
+  window.closePrint = closePrint;
+  window.stepPrint = stepPrint;
+
+  document.addEventListener("keydown", (e) => {
+    const lb = document.getElementById("print-lightbox");
+    if (!lb || lb.classList.contains("hidden")) return;
+    if (e.key === "Escape") closePrint();
+    else if (e.key === "ArrowLeft") stepPrint(-1);
+    else if (e.key === "ArrowRight") stepPrint(1);
+  });
+
+  // close when clicking the dark backdrop (not the panel/image)
+  document.getElementById("print-lightbox")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closePrint();
+  });
+
+  // swipe navigation on touch devices
+  let touchStartX = 0;
+  const lbEl = document.getElementById("print-lightbox");
+  lbEl?.addEventListener("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; }, { passive: true });
+  lbEl?.addEventListener("touchend", (e) => {
+    const dx = e.changedTouches[0].screenX - touchStartX;
+    if (Math.abs(dx) > 50) stepPrint(dx < 0 ? 1 : -1);
+  });
+</script>
+
+<style>
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

@@ -1,0 +1,19 @@
+# Cloudflare Pages config — used for the canonical (rehders.photos) deploy,
+# for `wrangler pages dev`, and to expose the D1 binding to `astro dev` via the
+# Cloudflare adapter's platformProxy.
+#
+# The GitHub Pages deploy ignores this file entirely (it builds a static site).
+
+name = "photo"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database holding print metadata (title / description / price / sizes).
+# Create it once with:  wrangler d1 create prints
+# then paste the returned database_id below and bind it in the Pages project too.
+[[d1_databases]]
+binding = "prints"
+database_name = "prints"
+database_id = "05db4e66-bfd4-4f10-841e-00366fdf0ea1"
+migrations_dir = "migrations"

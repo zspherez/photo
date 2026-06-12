@@ -8,7 +8,6 @@ import {
 } from "../lib/cloudinary-image";
 import {
   fetchPrintsViaRest,
-  fetchDefaultsViaRest,
   humanizePublicId,
   type PrintInfo,
   type PrintSize,
@@ -52,10 +51,7 @@ const search = await cloudinary.search
 
 const resources = (search.resources ?? []) as CloudinaryResource[];
 
-const [metadata, globalDefaults] = await Promise.all([
-  fetchPrintsViaRest(),
-  fetchDefaultsViaRest(),
-]);
+const metadata = await fetchPrintsViaRest();
 
 const sign = Boolean(apiSecret);
 
@@ -67,14 +63,12 @@ const sign = Boolean(apiSecret);
 function buildDisplaySizes(
   matchedSpecs: PrintSpec[],
   dbInfo: PrintInfo | undefined,
-  defaults: PrintInfo | undefined,
 ): PrintSize[] {
-  const dbPriceMap   = new Map((dbInfo?.sizes ?? []).map(s => [s.label, s.price]));
-  const defPriceMap  = new Map((defaults?.sizes ?? []).map(s => [s.label, s.price]));
+  const dbPriceMap = new Map((dbInfo?.sizes ?? []).map(s => [s.label, s.price]));
 
   const sized = matchedSpecs.map(spec => ({
     label: spec.label,
-    price: dbPriceMap.get(spec.label) ?? defPriceMap.get(spec.label) ?? spec.defaultPrice,
+    price: dbPriceMap.get(spec.label) ?? spec.defaultPrice,
   }));
 
   return [...sized, OTHER_SIZES_ENTRY];
@@ -96,7 +90,7 @@ const items = await Promise.all(
       "Open-edition fine art print, signed on the reverse.";
 
     const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
-    const displaySizes = buildDisplaySizes(matchedSpecs, dbInfo, globalDefaults);
+    const displaySizes = buildDisplaySizes(matchedSpecs, dbInfo);
 
     const [gridUrl, enlargedUrl] = await Promise.all([
       buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {

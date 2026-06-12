@@ -5,7 +5,6 @@ import { searchFolder } from "../../lib/cloudinary-admin";
 import { buildPrintImageUrl, THUMB_WIDTH } from "../../lib/cloudinary-image";
 import {
   fetchPrintsViaD1,
-  fetchDefaultsViaD1,
   humanizePublicId,
   type PrintInfo,
   type PrintSize,
@@ -24,7 +23,7 @@ interface Card {
   thumb: string;
   current: PrintInfo;
   placeholderTitle: string;
-  /** Aspect-ratio-matched sizes with pre-filled prices from DB or defaults. */
+  /** Aspect-ratio-matched sizes; savedPrice overrides the STANDARD_SIZES default. */
   aspectSizes: Array<{ label: string; defaultPrice: string; savedPrice: string }>;
   maxSize: string | null;
 }
@@ -33,7 +32,6 @@ let available = false;
 let authed = false;
 let errorMessage = "";
 let cards: Card[] = [];
-let currentDefaults: PrintInfo = {};
 
 if (runtime?.DB) {
   available = true;
@@ -46,14 +44,10 @@ if (runtime?.DB) {
       const apiKey = runtime.PUBLIC_CLOUDINARY_API_KEY!;
       const apiSecret = runtime.SECRET_CLOUDINARY_API_KEY!;
 
-      const [resources, metadata, savedDefaults] = await Promise.all([
+      const [resources, metadata] = await Promise.all([
         searchFolder({ cloudName, apiKey, apiSecret }, folder),
         fetchPrintsViaD1(runtime.DB),
-        fetchDefaultsViaD1(runtime.DB),
       ]);
-
-      currentDefaults = savedDefaults ?? {};
-      const defPriceMap = new Map((currentDefaults.sizes ?? []).map(s => [s.label, s.price]));
 
       cards = await Promise.all(
         resources.map(async (r) => {
@@ -62,7 +56,7 @@ if (runtime?.DB) {
             watermark: "",
             sign: true,
           });
-          const dbInfo   = metadata[r.public_id];
+          const dbInfo     = metadata[r.public_id];
           const dbPriceMap = new Map((dbInfo?.sizes ?? []).map(s => [s.label, s.price]));
           const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
           return {
@@ -72,7 +66,7 @@ if (runtime?.DB) {
             placeholderTitle: humanizePublicId(r.public_id),
             aspectSizes: matchedSpecs.map(spec => ({
               label: spec.label,
-              defaultPrice: defPriceMap.get(spec.label) ?? spec.defaultPrice,
+              defaultPrice: spec.defaultPrice,
               savedPrice: dbPriceMap.get(spec.label) ?? "",
             })),
             maxSize: maxPrintSizeLabel(r.width, r.height),
@@ -83,11 +77,6 @@ if (runtime?.DB) {
   } catch (err) {
     errorMessage = (err as Error).message;
   }
-}
-
-function sizesToText(info: PrintInfo): string {
-  if (!info.sizes || !info.sizes.length) return "";
-  return info.sizes.map((s) => `${s.label} | ${s.price}`).join("\n");
 }
 ---
 
@@ -131,60 +120,9 @@ function sizesToText(info: PrintInfo): string {
             Publish to gallery
           </button>
           <span id="publish-status" class="text-sm text-neutral-400">
-            Saves above are instant. Publishing rebuilds the public gallery (~1 min).
+            Saves are instant. Publishing rebuilds the public gallery (~1 min).
           </span>
         </div>
-
-        {/* ── Default pricing ── */}
-        <form
-          class="mt-6 rounded-lg border border-indigo-900/60 bg-neutral-900/60 p-4"
-          onsubmit="return saveDefaults(event, this)"
-        >
-          <h2 class="text-base font-semibold">Default pricing</h2>
-          <p class="mt-1 text-sm text-neutral-400">
-            Applied to every print that has no per-image override. Leave blank to
-            auto-calculate from each photo's resolution.
-          </p>
-          <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <label class="block">
-              <span class="text-xs uppercase tracking-wide text-neutral-400">
-                Default sizes — one per line: <code>label | price</code>
-              </span>
-              <textarea
-                name="sizes"
-                rows="6"
-                placeholder={"4×5\" | $25\n5×7\" | $35\n8×10\" | $50\n11×14\" | $85\n16×24\" | $175\n24×36\" | $350"}
-                class="mt-1 w-full rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
-              >{sizesToText(currentDefaults)}</textarea>
-            </label>
-            <div class="space-y-3">
-              <label class="block">
-                <span class="text-xs uppercase tracking-wide text-neutral-400">
-                  Default headline price (if not using size tiers)
-                </span>
-                <input
-                  name="price"
-                  type="text"
-                  value={currentDefaults.price ?? ""}
-                  placeholder="$120"
-                  class="mt-1 w-full rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
-                />
-              </label>
-              <p class="text-xs text-neutral-500">
-                Priority order: per-image sizes → per-image price → these defaults → auto-calculated from resolution.
-              </p>
-            </div>
-          </div>
-          <div class="mt-3 flex items-center gap-3">
-            <button
-              type="submit"
-              class="rounded bg-slate-100 px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-white"
-            >
-              Save defaults
-            </button>
-            <span class="defaults-status text-sm text-neutral-400"></span>
-          </div>
-        </form>
 
         <div class="mt-8 space-y-6">
           {cards.map((card) => (
@@ -267,19 +205,6 @@ function sizesToText(info: PrintInfo): string {
 </Layout>
 
 <script is:inline>
-  function parseSizes(text) {
-    return text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const sep = line.includes("|") ? "|" : "=";
-        const [label, price] = line.split(sep);
-        return { label: (label || "").trim(), price: (price || "").trim() };
-      })
-      .filter((s) => s.label && s.price);
-  }
-
   async function savePrint(event, form) {
     event.preventDefault();
     const status = form.querySelector(".status");
@@ -288,7 +213,6 @@ function sizesToText(info: PrintInfo): string {
 
     const field = (name) => form.elements.namedItem(name)?.value ?? "";
 
-    // Collect per-size price inputs
     const sizes = [];
     for (const input of form.querySelectorAll('[name^="size__"]')) {
       if (input.value.trim()) {
@@ -327,44 +251,6 @@ function sizesToText(info: PrintInfo): string {
   }
 
   window.savePrint = savePrint;
-
-  async function saveDefaults(event, form) {
-    event.preventDefault();
-    const status = form.querySelector(".defaults-status");
-    status.textContent = "Saving…";
-    status.className = "defaults-status text-sm text-neutral-400";
-
-    const field = (name) => form.elements.namedItem(name).value;
-    const payload = {
-      public_id: "__defaults__",
-      title: "",
-      description: "",
-      price: field("price"),
-      sizes: parseSizes(field("sizes")),
-    };
-
-    try {
-      const res = await fetch("/api/prints", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        status.textContent = "Saved ✓";
-        status.className = "defaults-status text-sm text-green-400";
-      } else {
-        status.textContent = data.error || "Error";
-        status.className = "defaults-status text-sm text-red-400";
-      }
-    } catch (err) {
-      status.textContent = String(err);
-      status.className = "defaults-status text-sm text-red-400";
-    }
-    return false;
-  }
-
-  window.saveDefaults = saveDefaults;
 
   async function publishSite(btn) {
     const status = document.getElementById("publish-status");

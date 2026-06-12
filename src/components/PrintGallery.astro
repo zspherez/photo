@@ -8,6 +8,7 @@ import {
 } from "../lib/cloudinary-image";
 import {
   fetchPrintsViaRest,
+  fetchDefaultsViaRest,
   resolvePrint,
   type PrintInfo,
 } from "../lib/prints";
@@ -48,7 +49,10 @@ const search = await cloudinary.search
 const resources = (search.resources ?? []) as CloudinaryResource[];
 
 // Build-time metadata snapshot from D1 (REST). Empty {} if unconfigured.
-const metadata = await fetchPrintsViaRest();
+const [metadata, globalDefaults] = await Promise.all([
+  fetchPrintsViaRest(),
+  fetchDefaultsViaRest(),
+]);
 
 // Sign URLs when we have a secret; otherwise fall back to unsigned (dev).
 const sign = Boolean(apiSecret);
@@ -66,7 +70,7 @@ const items = await Promise.all(
     const context = (r.context?.custom ?? r.context) as
       | Record<string, string>
       | undefined;
-    const info = resolvePrint(r.public_id, metadata[r.public_id], context, r.width, r.height);
+    const info = resolvePrint(r.public_id, metadata[r.public_id], context, r.width, r.height, globalDefaults);
     const [gridUrl, enlargedUrl] = await Promise.all([
       buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
         width: GRID_WIDTH,

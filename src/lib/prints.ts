@@ -84,6 +84,7 @@ export function humanizePublicId(publicId: string): string {
  * `context` is Cloudinary's contextual metadata (e.g. `{ caption, alt, price }`).
  * `widthPx` / `heightPx` — the photo's pixel dimensions; used to auto-calculate
  * available print sizes when none are explicitly set.
+ * `globalDefaults` — the default pricing saved in the dashboard.
  */
 export function resolvePrint(
   publicId: string,
@@ -91,6 +92,7 @@ export function resolvePrint(
   context?: Record<string, string> | undefined,
   widthPx?: number,
   heightPx?: number,
+  globalDefaults?: PrintInfo,
 ): Required<Pick<PrintInfo, "title" | "description">> & PrintInfo {
   const title = info?.title || humanizePublicId(publicId);
   const description =
@@ -100,11 +102,17 @@ export function resolvePrint(
 
   const resolved: PrintInfo = { title, description };
   if (sizes) {
+    // Explicit per-image override wins.
     resolved.sizes = sizes;
   } else if (price) {
     resolved.price = price;
+  } else if (globalDefaults?.sizes?.length) {
+    // Dashboard-managed defaults.
+    resolved.sizes = globalDefaults.sizes;
+  } else if (globalDefaults?.price) {
+    resolved.price = globalDefaults.price;
   } else if (widthPx && heightPx) {
-    // Auto-calculate available sizes from the photo's actual resolution.
+    // Auto-calculate from resolution as last resort.
     const calculated = calculatePrintSizes(widthPx, heightPx);
     if (calculated.length) resolved.sizes = calculated;
   }
@@ -162,11 +170,45 @@ export async function fetchPrintsViaD1(db: D1Database): Promise<PrintMap> {
 
 function rowsToMap(rows: PrintRow[]): PrintMap {
   const map: PrintMap = {};
-  for (const row of rows) map[row.public_id] = rowToPrintInfo(row);
+  for (const row of rows) {
+    if (row.public_id !== DEFAULTS_KEY) map[row.public_id] = rowToPrintInfo(row);
+  }
   return map;
 }
 
-/** Upsert a single print's metadata (runtime, D1 binding). */
+/** Special public_id used to store the global default pricing. */
+export const DEFAULTS_KEY = "__defaults__";
+
+/**
+ * Fetch the global default sizes/price from D1 (via binding, runtime).
+ * Returns undefined if no defaults have been saved yet.
+ */
+export async function fetchDefaultsViaD1(db: D1Database): Promise<PrintInfo | undefined> {
+  const row = await db
+    .prepare("SELECT sizes, price FROM prints WHERE public_id = ?1")
+    .bind(DEFAULTS_KEY)
+    .first<{ sizes: string | null; price: string | null }>();
+  if (!row) return undefined;
+  return { sizes: parseSizes(row.sizes), price: row.price ?? undefined };
+}
+
+/**
+ * Fetch the global default sizes/price via the D1 REST API (build time).
+ * Returns undefined if unconfigured or no defaults saved.
+ */
+export async function fetchDefaultsViaRest(
+  env: Record<string, string | undefined> = import.meta.env as any
+): Promise<PrintInfo | undefined> {
+  const map = await fetchPrintsViaRest(env);
+  return map[DEFAULTS_KEY];
+}
+
+/** Upsert the global default pricing. */
+export async function upsertDefaults(db: D1Database, info: PrintInfo): Promise<void> {
+  return upsertPrint(db, DEFAULTS_KEY, info);
+}
+
+
 export async function upsertPrint(db: D1Database, publicId: string, info: PrintInfo): Promise<void> {
   const sizesJson =
     info.sizes && info.sizes.length ? JSON.stringify(info.sizes) : null;

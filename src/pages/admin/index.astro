@@ -127,7 +127,7 @@ function sizesToText(info: PrintInfo): string {
                     type="text"
                     value={card.current.title ?? ""}
                     placeholder={card.placeholderTitle}
-                    class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                    class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-slate-100 placeholder:text-neutral-500"
                   />
                 </label>
 
@@ -136,7 +136,7 @@ function sizesToText(info: PrintInfo): string {
                   <textarea
                     name="description"
                     rows="2"
-                    class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                    class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-slate-100 placeholder:text-neutral-500"
                   >{card.current.description ?? ""}</textarea>
                 </label>
 
@@ -150,7 +150,7 @@ function sizesToText(info: PrintInfo): string {
                       type="text"
                       value={card.current.price ?? ""}
                       placeholder="$120"
-                      class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                      class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-slate-100 placeholder:text-neutral-500"
                     />
                   </label>
 
@@ -162,7 +162,7 @@ function sizesToText(info: PrintInfo): string {
                       name="sizes"
                       rows="3"
                       placeholder={'8×10" | $45\n16×24" | $120'}
-                      class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
+                      class="mt-1 w-full rounded border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-slate-100 placeholder:text-neutral-500"
                     >{sizesToText(card.current)}</textarea>
                   </label>
                 </div>

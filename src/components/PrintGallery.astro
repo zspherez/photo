@@ -75,7 +75,7 @@ const items = await Promise.all(
       }),
       buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
         width: ENLARGED_WIDTH,
-        watermark,
+        watermark: "",  // no watermark on enlarged — still resolution-capped to 1600px
         sign,
       }),
     ]);

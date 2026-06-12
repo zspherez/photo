@@ -11,6 +11,7 @@ interface CloudflareEnv {
   DB: D1Database;
   CF_ACCESS_TEAM_DOMAIN?: string;
   CF_ACCESS_AUD?: string;
+  CF_DEPLOY_HOOK_URL?: string;
   DASHBOARD_DEV_BYPASS?: string;
   PUBLIC_CLOUDINARY_CLOUD_NAME?: string;
   PUBLIC_CLOUDINARY_API_KEY?: string;

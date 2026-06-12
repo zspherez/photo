@@ -102,6 +102,19 @@ function sizesToText(info: PrintInfo): string {
           </p>
         )}
 
+        <div class="mt-6 flex items-center gap-4 border-b border-neutral-800 pb-6">
+          <button
+            type="button"
+            onclick="publishSite(this)"
+            class="rounded bg-indigo-500 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
+          >
+            Publish to gallery
+          </button>
+          <span id="publish-status" class="text-sm text-neutral-400">
+            Saves above are instant. Publishing rebuilds the public gallery (~1 min).
+          </span>
+        </div>
+
         <div class="mt-8 space-y-6">
           {cards.map((card) => (
             <form
@@ -236,4 +249,31 @@ function sizesToText(info: PrintInfo): string {
   }
 
   window.savePrint = savePrint;
+
+  async function publishSite(btn) {
+    const status = document.getElementById("publish-status");
+    btn.disabled = true;
+    btn.textContent = "Publishing…";
+    status.textContent = "";
+    try {
+      const res = await fetch("/api/deploy", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        btn.textContent = "Publish to gallery";
+        status.textContent = "✓ Deploy triggered — gallery will update in ~1 min.";
+        status.className = "text-sm text-green-400";
+      } else {
+        btn.textContent = "Publish to gallery";
+        status.textContent = data.error || "Deploy failed";
+        status.className = "text-sm text-red-400";
+      }
+    } catch (err) {
+      btn.textContent = "Publish to gallery";
+      status.textContent = String(err);
+      status.className = "text-sm text-red-400";
+    }
+    btn.disabled = false;
+  }
+
+  window.publishSite = publishSite;
 </script>

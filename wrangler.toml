@@ -13,7 +13,7 @@ compatibility_flags = ["nodejs_compat"]
 # Create it once with:  wrangler d1 create prints
 # then paste the returned database_id below and bind it in the Pages project too.
 [[d1_databases]]
-binding = "prints"
+binding = "DB"
 database_name = "prints"
 database_id = "05db4e66-bfd4-4f10-841e-00366fdf0ea1"
 migrations_dir = "migrations"

@@ -19,7 +19,7 @@
 export interface PrintImageOptions {
   /** Long-edge cap in pixels. */
   width: number;
-  /** Watermark text baked into the image. Set "" to disable. */
+  /** Cloudinary public_id of the logo/watermark image. Set "" to disable. */
   watermark?: string;
   /** Whether to sign the URL (requires apiSecret). Default true. */
   sign?: boolean;
@@ -31,7 +31,7 @@ export interface CloudinaryConfig {
   apiSecret?: string;
 }
 
-const DEFAULT_WATERMARK = "rehders.photos";
+const DEFAULT_WATERMARK = "logo_zde1ld";
 
 function base64Url(bytes: Uint8Array): string {
   let bin = "";
@@ -47,16 +47,6 @@ async function sha1Base64Url(input: string): Promise<string> {
 }
 
 /**
- * Cloudinary text overlays must have special characters escaped: commas and
- * slashes are doubled-encoded, and spaces become %20.
- */
-function encodeOverlayText(text: string): string {
-  return encodeURIComponent(text)
-    .replace(/%2C/gi, "%252C")
-    .replace(/%2F/gi, "%252F");
-}
-
-/**
  * Build the transformation string (the part between `/upload/` and the public_id).
  *
  * Parameter ordering matches the official Cloudinary SDK's canonical output
@@ -68,9 +58,9 @@ function buildTransformation(opts: PrintImageOptions): string {
   const watermark = opts.watermark ?? DEFAULT_WATERMARK;
   if (!watermark) return base;
 
-  // Tiled, semi-transparent white text watermark across the whole image.
-  const text = encodeOverlayText(watermark);
-  const overlay = `co_white,fl_tiled.layer_apply,l_text:Arial_48_bold:${text},o_22`;
+  // Logo watermark in the bottom-right corner.
+  // Uses the site logo (public_id: logo_zde1ld) at 55% opacity, 160px wide.
+  const overlay = `fl_layer_apply,g_south_east,l_${watermark},o_55,w_160,x_16,y_16`;
   return `${base}/${overlay}`;
 }
 

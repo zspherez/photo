@@ -8,6 +8,7 @@ import {
   humanizePublicId,
   type PrintInfo,
 } from "../../lib/prints";
+import { calculatePrintSizes, maxPrintSizeLabel } from "../../lib/print-sizes";
 
 // On-demand (SSR) route — runs on the Cloudflare deploy. On the static GitHub
 // Pages mirror there is no worker, so this page 404s there (intended).
@@ -21,6 +22,8 @@ interface Card {
   thumb: string;
   current: PrintInfo;
   placeholderTitle: string;
+  calculatedSizesText: string;
+  maxSize: string | null;
 }
 
 let available = false;
@@ -56,6 +59,10 @@ if (runtime?.DB) {
             thumb,
             current: metadata[r.public_id] ?? {},
             placeholderTitle: humanizePublicId(r.public_id),
+            calculatedSizesText: calculatePrintSizes(r.width, r.height)
+              .map((s) => `${s.label} | ${s.price}`)
+              .join("\n"),
+            maxSize: maxPrintSizeLabel(r.width, r.height),
           };
         })
       );
@@ -130,6 +137,9 @@ function sizesToText(info: PrintInfo): string {
                   draggable="false"
                 />
                 <p class="mt-2 break-all text-xs text-neutral-500">{card.publicId}</p>
+                {card.maxSize && (
+                  <p class="mt-1 text-xs text-indigo-400">Max quality print: {card.maxSize}</p>
+                )}
               </div>
 
               <div class="space-y-3">
@@ -171,10 +181,15 @@ function sizesToText(info: PrintInfo): string {
                     <span class="text-xs uppercase tracking-wide text-neutral-400">
                       Sizes — one per line: <code>label | price</code>
                     </span>
+                    {card.current.sizes || sizesToText(card.current) ? null : (
+                      <p class="mt-1 text-xs text-neutral-500">
+                        Auto-calculated from resolution (leave blank to use these):
+                      </p>
+                    )}
                     <textarea
                       name="sizes"
-                      rows="3"
-                      placeholder={'8×10" | $45\n16×24" | $120'}
+                      rows="4"
+                      placeholder={card.calculatedSizesText}
                       class="mt-1 w-full rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
                     >{sizesToText(card.current)}</textarea>
                   </label>

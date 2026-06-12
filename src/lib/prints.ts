@@ -37,14 +37,11 @@ export interface PrintRow {
 
 export type PrintMap = Record<string, PrintInfo>;
 
-/** Shown when an image has no DB row and no Cloudinary context. */
+import { calculatePrintSizes } from "./print-sizes";
+
+/** Fallback description when nothing is set. */
 export const defaultPrint: PrintInfo = {
   description: "Open-edition fine art print, signed on the reverse.",
-  sizes: [
-    { label: '8×10"', price: "$45" },
-    { label: '16×24"', price: "$120" },
-    { label: '24×36"', price: "$240" },
-  ],
 };
 
 function parseSizes(raw: string | null | undefined): PrintSize[] | undefined {
@@ -85,11 +82,15 @@ export function humanizePublicId(publicId: string): string {
 /**
  * Merge DB row + Cloudinary context + defaults into a guaranteed-complete object.
  * `context` is Cloudinary's contextual metadata (e.g. `{ caption, alt, price }`).
+ * `widthPx` / `heightPx` — the photo's pixel dimensions; used to auto-calculate
+ * available print sizes when none are explicitly set.
  */
 export function resolvePrint(
   publicId: string,
   info?: PrintInfo,
-  context?: Record<string, string> | undefined
+  context?: Record<string, string> | undefined,
+  widthPx?: number,
+  heightPx?: number,
 ): Required<Pick<PrintInfo, "title" | "description">> & PrintInfo {
   const title = info?.title || humanizePublicId(publicId);
   const description =
@@ -97,11 +98,16 @@ export function resolvePrint(
   const sizes = info?.sizes && info.sizes.length ? info.sizes : undefined;
   const price = info?.price || context?.price || undefined;
 
-  // If neither explicit sizes nor a price exist, fall back to the default sizes.
   const resolved: PrintInfo = { title, description };
-  if (sizes) resolved.sizes = sizes;
-  else if (price) resolved.price = price;
-  else resolved.sizes = defaultPrint.sizes;
+  if (sizes) {
+    resolved.sizes = sizes;
+  } else if (price) {
+    resolved.price = price;
+  } else if (widthPx && heightPx) {
+    // Auto-calculate available sizes from the photo's actual resolution.
+    const calculated = calculatePrintSizes(widthPx, heightPx);
+    if (calculated.length) resolved.sizes = calculated;
+  }
 
   return resolved as Required<Pick<PrintInfo, "title" | "description">> & PrintInfo;
 }

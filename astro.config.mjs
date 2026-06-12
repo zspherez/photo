@@ -18,6 +18,9 @@ export default defineConfig({
     // Expose Cloudflare bindings (the D1 `DB` binding from wrangler.toml) to
     // `astro dev` so the dashboard works locally.
     platformProxy: { enabled: true },
+    // All images go through Cloudinary's CDN — tell the adapter not to intercept
+    // image URLs. Without this the adapter wraps CldImage URLs and breaks them.
+    imageService: "passthrough",
   }),
   integrations: [
     tailwind(),

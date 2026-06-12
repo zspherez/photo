@@ -9,14 +9,18 @@ import {
 import {
   fetchPrintsViaRest,
   fetchDefaultsViaRest,
-  resolvePrint,
+  humanizePublicId,
   type PrintInfo,
+  type PrintSize,
 } from "../lib/prints";
+import {
+  calculateSizesMatchingAspectRatio,
+  OTHER_SIZES_ENTRY,
+  type PrintSpec,
+} from "../lib/print-sizes";
 
 export interface Props {
-  /** Cloudinary folder to pull prints from. */
   folder?: string;
-  /** Watermark text baked into preview images. */
   watermark?: string;
 }
 
@@ -27,7 +31,7 @@ interface CloudinaryResource {
   context?: { custom?: Record<string, string> } & Record<string, string>;
 }
 
-const { folder = "prints", watermark = "rehders.photos" } = Astro.props;
+const { folder = "prints", watermark = "logo_zde1ld" } = Astro.props;
 
 const cloudName = import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME;
 const apiSecret = import.meta.env.SECRET_CLOUDINARY_API_KEY;
@@ -48,29 +52,52 @@ const search = await cloudinary.search
 
 const resources = (search.resources ?? []) as CloudinaryResource[];
 
-// Build-time metadata snapshot from D1 (REST). Empty {} if unconfigured.
 const [metadata, globalDefaults] = await Promise.all([
   fetchPrintsViaRest(),
   fetchDefaultsViaRest(),
 ]);
 
-// Sign URLs when we have a secret; otherwise fall back to unsigned (dev).
 const sign = Boolean(apiSecret);
 
-function priceSummary(info: PrintInfo): string | null {
-  if (info.sizes && info.sizes.length) {
-    if (info.sizes.length === 1) return info.sizes[0].price;
-    return `from ${info.sizes[0].price}`;
-  }
-  return info.price ?? null;
+/**
+ * Build the display sizes for a photo.
+ * Priority per size: per-image DB price > global default price > STANDARD_SIZES default price.
+ * Always appends OTHER_SIZES_ENTRY at the end.
+ */
+function buildDisplaySizes(
+  matchedSpecs: PrintSpec[],
+  dbInfo: PrintInfo | undefined,
+  defaults: PrintInfo | undefined,
+): PrintSize[] {
+  const dbPriceMap   = new Map((dbInfo?.sizes ?? []).map(s => [s.label, s.price]));
+  const defPriceMap  = new Map((defaults?.sizes ?? []).map(s => [s.label, s.price]));
+
+  const sized = matchedSpecs.map(spec => ({
+    label: spec.label,
+    price: dbPriceMap.get(spec.label) ?? defPriceMap.get(spec.label) ?? spec.defaultPrice,
+  }));
+
+  return [...sized, OTHER_SIZES_ENTRY];
+}
+
+function priceSummary(sizes: PrintSize[]): string | null {
+  // Skip the "Other sizes" entry for the summary
+  const real = sizes.filter(s => s.price !== "Varies");
+  if (!real.length) return null;
+  return real.length === 1 ? real[0].price : `from ${real[0].price}`;
 }
 
 const items = await Promise.all(
   resources.map(async (r) => {
-    const context = (r.context?.custom ?? r.context) as
-      | Record<string, string>
-      | undefined;
-    const info = resolvePrint(r.public_id, metadata[r.public_id], context, r.width, r.height, globalDefaults);
+    const context  = (r.context?.custom ?? r.context) as Record<string, string> | undefined;
+    const dbInfo   = metadata[r.public_id];
+    const title    = dbInfo?.title || humanizePublicId(r.public_id);
+    const description = dbInfo?.description || context?.caption || context?.alt ||
+      "Open-edition fine art print, signed on the reverse.";
+
+    const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
+    const displaySizes = buildDisplaySizes(matchedSpecs, dbInfo, globalDefaults);
+
     const [gridUrl, enlargedUrl] = await Promise.all([
       buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
         width: GRID_WIDTH,
@@ -79,7 +106,7 @@ const items = await Promise.all(
       }),
       buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
         width: ENLARGED_WIDTH,
-        watermark: "",  // no watermark on enlarged — still resolution-capped to 1600px
+        watermark: "",
         sign,
       }),
     ]);
@@ -88,11 +115,10 @@ const items = await Promise.all(
       height: r.height,
       gridUrl,
       enlargedUrl,
-      title: info.title,
-      description: info.description,
-      sizes: info.sizes ?? null,
-      price: info.price ?? null,
-      priceSummary: priceSummary(info),
+      title,
+      description,
+      sizes: displaySizes,
+      priceSummary: priceSummary(displaySizes),
     };
   })
 );
@@ -221,15 +247,18 @@ const items = await Promise.all(
     sizesEl.innerHTML = "";
     priceEl.classList.add("hidden");
 
-    if (item.sizes && item.sizes.length) {
+        if (item.sizes && item.sizes.length) {
       for (const s of item.sizes) {
         const li = document.createElement("li");
-        li.className = "flex items-baseline justify-between gap-4 border-b border-neutral-800/60 pb-2";
+        const isOther = s.price === "Varies";
+        li.className = isOther
+          ? "flex items-baseline justify-between gap-4 pt-2 mt-1 border-t border-neutral-800/60 text-neutral-500 italic text-xs"
+          : "flex items-baseline justify-between gap-4 border-b border-neutral-800/60 pb-2";
         const label = document.createElement("span");
-        label.className = "text-neutral-300";
+        label.className = isOther ? "" : "text-neutral-300";
         label.textContent = s.label;
         const price = document.createElement("span");
-        price.className = "font-semibold";
+        price.className = isOther ? "" : "font-semibold";
         price.textContent = s.price;
         li.append(label, price);
         sizesEl.appendChild(li);

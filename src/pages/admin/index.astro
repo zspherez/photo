@@ -26,6 +26,7 @@ interface Card {
   /** Aspect-ratio-matched sizes; savedPrice overrides the STANDARD_SIZES default. */
   aspectSizes: Array<{ label: string; defaultPrice: string; savedPrice: string }>;
   maxSize: string | null;
+  category: string;
 }
 
 let available = false;
@@ -70,6 +71,7 @@ if (runtime?.DB) {
               savedPrice: dbPriceMap.get(spec.label) ?? "",
             })),
             maxSize: maxPrintSizeLabel(r.width, r.height),
+            category: dbInfo?.category ?? "",
           };
         })
       );
@@ -165,6 +167,19 @@ if (runtime?.DB) {
                   >{card.current.description ?? ""}</textarea>
                 </label>
 
+                <label class="block">
+                  <span class="text-xs uppercase tracking-wide text-neutral-400">Category</span>
+                  <select
+                    name="category"
+                    class="mt-1 rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900"
+                  >
+                    <option value="" selected={card.category === ""}>— Uncategorized —</option>
+                    <option value="concert" selected={card.category === "concert"}>Concert</option>
+                    <option value="knicks" selected={card.category === "knicks"}>Knicks</option>
+                    <option value="landscape" selected={card.category === "landscape"}>Landscape</option>
+                  </select>
+                </label>
+
                 <div class="space-y-2">
                   <span class="text-xs uppercase tracking-wide text-neutral-400">
                     Prices by size (leave blank to use defaults)
@@ -227,6 +242,7 @@ if (runtime?.DB) {
       description: field("description"),
       price: null,
       sizes,
+      category: field("category") || null,
     };
 
     try {

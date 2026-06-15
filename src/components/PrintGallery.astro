@@ -113,17 +113,26 @@ const items = await Promise.all(
       description,
       sizes: displaySizes,
       priceSummary: priceSummary(displaySizes),
+      category: dbInfo?.category ?? "",
     };
   })
 );
 ---
 
-<div class="flex flex-wrap m-0.5 select-none">
+<div id="print-filters" class="flex flex-wrap gap-2 px-2 py-4">
+  <button class="filter-btn active" data-filter="">All</button>
+  <button class="filter-btn" data-filter="concert">Concert</button>
+  <button class="filter-btn" data-filter="knicks">Knicks</button>
+  <button class="filter-btn" data-filter="landscape">Landscape</button>
+</div>
+
+<div class="flex flex-wrap m-0.5 select-none" id="print-grid">
   {
     items.map((item, index) => (
       <div
         class="print-tile group relative m-0.5 cursor-pointer overflow-hidden max-w-[calc(50%-4px)] sm:max-w-none"
         data-index={index}
+        data-category={item.category}
         style={`flex-grow: ${(item.width * 350) / item.height}; flex-basis: ${(item.width * 350) / item.height}px;`}
         onclick="openPrint(this)"
       >
@@ -233,7 +242,50 @@ const items = await Promise.all(
 
 <script define:vars={{ items, inquireEmail: "josh@rehders.photos" }} is:inline>
   const PRINTS = items;
-  let currentIndex = 0;
+  let currentFilter = "";
+  let visibleIndices = PRINTS.map((_, i) => i);
+  let currentVisiblePos = 0;
+
+  // ── Filtering ──────────────────────────────────────────────────────────────
+
+  function applyFilter(filter) {
+    currentFilter = filter;
+    const tiles = document.querySelectorAll(".print-tile");
+    tiles.forEach((tile) => {
+      const cat = tile.dataset.category ?? "";
+      tile.style.display = (!filter || cat === filter) ? "" : "none";
+    });
+    visibleIndices = PRINTS
+      .map((_, i) => i)
+      .filter((i) => !filter || (PRINTS[i].category ?? "") === filter);
+
+    // Sync button active state
+    document.querySelectorAll(".filter-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.filter === filter);
+    });
+
+    // Update URL param without reload
+    const url = new URL(window.location.href);
+    if (filter) url.searchParams.set("filter", filter);
+    else url.searchParams.delete("filter");
+    history.pushState({ filter }, "", url.toString());
+  }
+
+  // Wire filter buttons
+  document.querySelectorAll(".filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => applyFilter(btn.dataset.filter ?? ""));
+  });
+
+  // Apply filter from URL on load
+  const initialFilter = new URL(window.location.href).searchParams.get("filter") ?? "";
+  if (initialFilter) applyFilter(initialFilter);
+
+  // Handle back/forward
+  window.addEventListener("popstate", (e) => {
+    applyFilter((e.state && e.state.filter) || "");
+  });
+
+  // ── Lightbox ───────────────────────────────────────────────────────────────
 
   function renderPricing(item) {
     const sizesEl = document.getElementById("print-lightbox-sizes");
@@ -241,7 +293,7 @@ const items = await Promise.all(
     sizesEl.innerHTML = "";
     priceEl.classList.add("hidden");
 
-        if (item.sizes && item.sizes.length) {
+    if (item.sizes && item.sizes.length) {
       for (const s of item.sizes) {
         const li = document.createElement("li");
         const isOther = s.price === "Varies";
@@ -263,10 +315,11 @@ const items = await Promise.all(
     }
   }
 
-  function showPrint(index) {
+  function showPrint(visiblePos) {
+    const index = visibleIndices[visiblePos];
+    if (index === undefined) return;
+    currentVisiblePos = visiblePos;
     const item = PRINTS[index];
-    if (!item) return;
-    currentIndex = index;
 
     const img = document.getElementById("print-lightbox-img");
     img.src = item.enlargedUrl;
@@ -286,7 +339,8 @@ const items = await Promise.all(
 
   function openPrint(tile) {
     const index = Number(tile.dataset.index);
-    showPrint(index);
+    const pos = visibleIndices.indexOf(index);
+    showPrint(pos >= 0 ? pos : 0);
     const lb = document.getElementById("print-lightbox");
     lb.classList.remove("hidden");
     lb.classList.add("flex");
@@ -303,7 +357,7 @@ const items = await Promise.all(
   }
 
   function stepPrint(delta) {
-    const next = (currentIndex + delta + PRINTS.length) % PRINTS.length;
+    const next = (currentVisiblePos + delta + visibleIndices.length) % visibleIndices.length;
     showPrint(next);
   }
 
@@ -320,12 +374,10 @@ const items = await Promise.all(
     else if (e.key === "ArrowRight") stepPrint(1);
   });
 
-  // close when clicking the dark backdrop (not the panel/image)
   document.getElementById("print-lightbox")?.addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closePrint();
   });
 
-  // swipe navigation on touch devices
   let touchStartX = 0;
   const lbEl = document.getElementById("print-lightbox");
   lbEl?.addEventListener("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; }, { passive: true });
@@ -341,5 +393,29 @@ const items = await Promise.all(
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .filter-btn {
+    padding: 0.35rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid rgb(64 64 64);
+    background: transparent;
+    color: rgb(163 163 163);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .filter-btn:hover {
+    background: rgb(38 38 38);
+    color: #fff;
+    border-color: rgb(115 115 115);
+  }
+  .filter-btn.active {
+    background: rgb(248 248 248);
+    color: rgb(10 10 10);
+    border-color: transparent;
   }
 </style>

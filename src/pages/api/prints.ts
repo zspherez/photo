@@ -78,6 +78,8 @@ export const PUT: APIRoute = async ({ locals, request }) => {
         : undefined,
     price: typeof body.price === "string" && body.price.trim() ? body.price.trim() : undefined,
     sizes: sanitizeSizes(body.sizes),
+    category:
+      typeof body.category === "string" && body.category.trim() ? body.category.trim() : undefined,
   };
 
   try {

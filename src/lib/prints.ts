@@ -23,6 +23,8 @@ export interface PrintInfo {
   price?: string;
   /** Optional size/price options. */
   sizes?: PrintSize[];
+  /** Gallery filter category: "concert" | "knicks" | "landscape" */
+  category?: string;
 }
 
 /** A row as stored in D1 (sizes is a JSON string there). */
@@ -32,6 +34,7 @@ export interface PrintRow {
   description: string | null;
   price: string | null;
   sizes: string | null;
+  category: string | null;
   updated_at?: string;
 }
 
@@ -65,6 +68,7 @@ export function rowToPrintInfo(row: PrintRow): PrintInfo {
     description: row.description ?? undefined,
     price: row.price ?? undefined,
     sizes: parseSizes(row.sizes),
+    category: row.category ?? undefined,
   };
 }
 
@@ -121,7 +125,7 @@ export function resolvePrint(
 }
 
 const SELECT_SQL =
-  "SELECT public_id, title, description, price, sizes, updated_at FROM prints";
+  "SELECT public_id, title, description, price, sizes, category, updated_at FROM prints";
 
 /**
  * Build-time read via the Cloudflare D1 REST API.
@@ -214,17 +218,18 @@ export async function upsertPrint(db: D1Database, publicId: string, info: PrintI
     info.sizes && info.sizes.length ? JSON.stringify(info.sizes) : null;
   await db
     .prepare(
-      `INSERT INTO prints (public_id, title, description, price, sizes, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+      `INSERT INTO prints (public_id, title, description, price, sizes, category, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
        ON CONFLICT(public_id) DO UPDATE SET
-         title = ?2, description = ?3, price = ?4, sizes = ?5, updated_at = datetime('now')`
+         title = ?2, description = ?3, price = ?4, sizes = ?5, category = ?6, updated_at = datetime('now')`
     )
     .bind(
       publicId,
       info.title ?? null,
       info.description ?? null,
       info.price ?? null,
-      sizesJson
+      sizesJson,
+      info.category ?? null,
     )
     .run();
 }

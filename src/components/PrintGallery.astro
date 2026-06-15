@@ -243,8 +243,29 @@ const items = await Promise.all(
 <script define:vars={{ items, inquireEmail: "josh@rehders.photos" }} is:inline>
   const PRINTS = items;
   let currentFilter = "";
-  let visibleIndices = PRINTS.map((_, i) => i);
   let currentVisiblePos = 0;
+
+  // ── Shuffle DOM tiles on load ──────────────────────────────────────────────
+
+  function shuffleGrid() {
+    const grid = document.getElementById("print-grid");
+    const tiles = [...grid.querySelectorAll(".print-tile")];
+    for (let i = tiles.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      grid.appendChild(tiles[j]);
+      tiles.splice(j, 1);
+    }
+  }
+
+  shuffleGrid();
+
+  // ── Visible index tracking (DOM-order aware) ────────────────────────────────
+
+  function rebuildVisibleIndices() {
+    return [...document.querySelectorAll(".print-tile")]
+      .filter((t) => t.style.display !== "none")
+      .map((t) => Number(t.dataset.index));
+  }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
 
@@ -255,9 +276,6 @@ const items = await Promise.all(
       const cat = tile.dataset.category ?? "";
       tile.style.display = (!filter || cat === filter) ? "" : "none";
     });
-    visibleIndices = PRINTS
-      .map((_, i) => i)
-      .filter((i) => !filter || (PRINTS[i].category ?? "") === filter);
 
     // Sync button active state
     document.querySelectorAll(".filter-btn").forEach((btn) => {
@@ -315,8 +333,8 @@ const items = await Promise.all(
     }
   }
 
-  function showPrint(visiblePos) {
-    const index = visibleIndices[visiblePos];
+  function showPrint(vis, visiblePos) {
+    const index = vis[visiblePos];
     if (index === undefined) return;
     currentVisiblePos = visiblePos;
     const item = PRINTS[index];
@@ -339,8 +357,10 @@ const items = await Promise.all(
 
   function openPrint(tile) {
     const index = Number(tile.dataset.index);
-    const pos = visibleIndices.indexOf(index);
-    showPrint(pos >= 0 ? pos : 0);
+    const vis = rebuildVisibleIndices();
+    const pos = vis.indexOf(index);
+    currentVisiblePos = pos >= 0 ? pos : 0;
+    showPrint(vis, currentVisiblePos);
     const lb = document.getElementById("print-lightbox");
     lb.classList.remove("hidden");
     lb.classList.add("flex");
@@ -357,8 +377,10 @@ const items = await Promise.all(
   }
 
   function stepPrint(delta) {
-    const next = (currentVisiblePos + delta + visibleIndices.length) % visibleIndices.length;
-    showPrint(next);
+    const vis = rebuildVisibleIndices();
+    const next = (currentVisiblePos + delta + vis.length) % vis.length;
+    currentVisiblePos = next;
+    showPrint(vis, next);
   }
 
   // expose for inline handlers

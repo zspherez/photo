@@ -128,13 +128,13 @@ const SELECT_SQL =
   "SELECT public_id, title, description, price, sizes, category, updated_at FROM prints";
 
 /**
- * Build-time read via the Cloudflare D1 REST API.
+ * Shared REST fetch of all rows (including the `DEFAULTS_KEY` row, unfiltered).
  * Requires env: CF_ACCOUNT_ID, CF_D1_DATABASE_ID, CF_D1_API_TOKEN.
- * Returns an empty map (and warns) if unconfigured, so builds never hard-fail.
+ * Returns an empty array (and warns) if unconfigured, so builds never hard-fail.
  */
-export async function fetchPrintsViaRest(
-  env: Record<string, string | undefined> = import.meta.env as any
-): Promise<PrintMap> {
+async function fetchRowsViaRest(
+  env: Record<string, string | undefined>
+): Promise<PrintRow[]> {
   const accountId = env.CLOUDFLARE_ACCOUNT_ID || env.CF_ACCOUNT_ID;
   const databaseId = env.CF_D1_DATABASE_ID;
   const token = env.CF_D1_API_TOKEN;
@@ -143,7 +143,7 @@ export async function fetchPrintsViaRest(
     console.warn(
       "[prints] CF_ACCOUNT_ID / CF_D1_DATABASE_ID / CF_D1_API_TOKEN not set — building gallery with no DB metadata."
     );
-    return {};
+    return [];
   }
 
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
@@ -158,11 +158,22 @@ export async function fetchPrintsViaRest(
 
   if (!res.ok) {
     console.warn(`[prints] D1 REST query failed (${res.status}); continuing without metadata.`);
-    return {};
+    return [];
   }
 
   const json: any = await res.json();
-  const rows: PrintRow[] = json?.result?.[0]?.results ?? [];
+  return json?.result?.[0]?.results ?? [];
+}
+
+/**
+ * Build-time read via the Cloudflare D1 REST API.
+ * Requires env: CF_ACCOUNT_ID, CF_D1_DATABASE_ID, CF_D1_API_TOKEN.
+ * Returns an empty map (and warns) if unconfigured, so builds never hard-fail.
+ */
+export async function fetchPrintsViaRest(
+  env: Record<string, string | undefined> = import.meta.env as any
+): Promise<PrintMap> {
+  const rows = await fetchRowsViaRest(env);
   return rowsToMap(rows);
 }
 
@@ -199,12 +210,17 @@ export async function fetchDefaultsViaD1(db: D1Database): Promise<PrintInfo | un
 /**
  * Fetch the global default sizes/price via the D1 REST API (build time).
  * Returns undefined if unconfigured or no defaults saved.
+ *
+ * Reads from the unfiltered row list (not `fetchPrintsViaRest`'s map) since
+ * that map deliberately excludes the `DEFAULTS_KEY` row.
  */
 export async function fetchDefaultsViaRest(
   env: Record<string, string | undefined> = import.meta.env as any
 ): Promise<PrintInfo | undefined> {
-  const map = await fetchPrintsViaRest(env);
-  return map[DEFAULTS_KEY];
+  const rows = await fetchRowsViaRest(env);
+  const row = rows.find((r) => r.public_id === DEFAULTS_KEY);
+  if (!row) return undefined;
+  return { sizes: parseSizes(row.sizes), price: row.price ?? undefined };
 }
 
 /** Upsert the global default pricing. */

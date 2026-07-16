@@ -86,6 +86,11 @@ CF_D1_API_TOKEN=          # API token with D1 read access
 CF_ACCESS_TEAM_DOMAIN=    # e.g. yourteam.cloudflareaccess.com
 CF_ACCESS_AUD=            # the Access application's Audience (AUD) tag
 # DASHBOARD_DEV_BYPASS=1
+
+# Optional: lets the dashboard trigger a Cloudflare Pages rebuild after saving
+# print edits (see "How rendering / publishing works" below). Leave unset to
+# skip that button.
+CF_DEPLOY_HOOK_URL=
 ```
 
 The two `PUBLIC_*` vars are inlined into the client bundle (Astro convention); the `SECRET_*` one stays server-side and is used only during `astro build`.
@@ -108,7 +113,7 @@ To fully lock it down, enable **Strict Transformations** in the Cloudinary conso
 
 - The public `/prints` gallery is **prerendered** (static) on both deploys. At build time it reads print metadata from D1 over the **D1 REST API** (so even the GitHub Pages build, which has no binding, gets a consistent snapshot).
 - The `/admin` dashboard and `/api/prints` endpoint are **on-demand (SSR)** routes that run only on the Cloudflare deploy via the bound `DB` database. On the static GitHub Pages mirror they simply 404.
-- Editing in the dashboard writes to D1 immediately; the public gallery reflects changes **on the next build**. Wire a Cloudflare **deploy hook** (and optionally a GitHub `workflow_dispatch`) to rebuild after edits.
+- Editing in the dashboard writes to D1 immediately; the public gallery reflects changes **on the next build**. Wire a Cloudflare **deploy hook** (and optionally a GitHub `workflow_dispatch`) to rebuild after edits — set its URL as `CF_DEPLOY_HOOK_URL` for the `/api/deploy` endpoint to use.
 
 Metadata for each image resolves in this order: D1 row → Cloudinary contextual metadata (`caption` / `alt`) → sensible defaults (`src/lib/prints.ts`).
 
@@ -127,7 +132,7 @@ Then, in the Cloudflare dashboard:
 
 - **Bind D1** to the Pages project as `DB` (Settings → Functions → D1 bindings).
 - **Cloudflare Access**: create an Access application protecting `/admin*` and `/api/prints*`, with a policy allowing only your email. Copy its **AUD** tag and your team domain into the Pages env vars.
-- **Pages environment variables / secrets**: `PUBLIC_CLOUDINARY_CLOUD_NAME`, `PUBLIC_CLOUDINARY_API_KEY`, `SECRET_CLOUDINARY_API_KEY`, `CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_D1_API_TOKEN`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`.
+- **Pages environment variables / secrets**: `PUBLIC_CLOUDINARY_CLOUD_NAME`, `PUBLIC_CLOUDINARY_API_KEY`, `SECRET_CLOUDINARY_API_KEY`, `CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_D1_API_TOKEN`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `CF_DEPLOY_HOOK_URL` (optional).
 - **GitHub Pages**: add `CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_D1_API_TOKEN` as Actions secrets (and pass them through in `deploy.yml`) so the mirror's `/prints` gallery shows the same metadata.
 
 Upload the photos you want to sell into a Cloudinary folder named **`prints`**, then open `/admin` to set titles, descriptions and pricing.

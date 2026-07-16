@@ -4,6 +4,7 @@ import Icon from "./Icon.astro";
 import {
   buildPrintImageUrl,
   GRID_WIDTH,
+  GRID_WIDTHS,
   ENLARGED_WIDTH,
 } from "../lib/cloudinary-image";
 import {
@@ -21,6 +22,8 @@ import {
 export interface Props {
   folder?: string;
   watermark?: string;
+  /** Off by default — watermarking the enlarged image is a product decision pending sign-off. */
+  watermarkEnlarged?: boolean;
 }
 
 interface CloudinaryResource {
@@ -30,7 +33,7 @@ interface CloudinaryResource {
   context?: { custom?: Record<string, string> } & Record<string, string>;
 }
 
-const { folder = "prints", watermark = "logo_zde1ld" } = Astro.props;
+const { folder = "prints", watermark = "logo_zde1ld", watermarkEnlarged = false } = Astro.props;
 
 const cloudName = import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME;
 const apiSecret = import.meta.env.SECRET_CLOUDINARY_API_KEY;
@@ -42,16 +45,18 @@ cloudinary.config({
   secure: true,
 });
 
-const search = await cloudinary.search
-  .expression(`folder:${folder} AND resource_type:image`)
-  .with_field("context")
-  .sort_by("display_name", "asc")
-  .max_results(500)
-  .execute();
+// Cloudinary search and D1 metadata are independent — fetch concurrently.
+const [search, metadata] = await Promise.all([
+  cloudinary.search
+    .expression(`folder:${folder} AND resource_type:image`)
+    .with_field("context")
+    .sort_by("display_name", "asc")
+    .max_results(500)
+    .execute(),
+  fetchPrintsViaRest(),
+]);
 
 const resources = (search.resources ?? []) as CloudinaryResource[];
-
-const metadata = await fetchPrintsViaRest();
 
 const sign = Boolean(apiSecret);
 
@@ -92,22 +97,35 @@ const items = await Promise.all(
     const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
     const displaySizes = buildDisplaySizes(matchedSpecs, dbInfo);
 
-    const [gridUrl, enlargedUrl] = await Promise.all([
-      buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
-        width: GRID_WIDTH,
-        watermark,
-        sign,
-      }),
+    // Fixed width ladder keeps every grid variant a pre-signed transformation.
+    const [gridLadder, enlargedUrl] = await Promise.all([
+      Promise.all(
+        GRID_WIDTHS.map(async (w) => ({
+          w,
+          url: await buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
+            width: w,
+            watermark,
+            sign,
+          }),
+        }))
+      ),
       buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
         width: ENLARGED_WIDTH,
-        watermark: "",
+        watermark: watermarkEnlarged ? watermark : "",
         sign,
       }),
     ]);
+    const gridSrcset = gridLadder.map(({ url, w }) => `${url} ${w}w`).join(", ");
+    const gridUrl = gridLadder[gridLadder.length - 1].url; // no-srcset fallback
+    // Mirrors the tile's own flex-basis math so `sizes` matches its real box.
+    const desktopSizePx = Math.min(Math.round((r.width * 350) / r.height), GRID_WIDTH);
+
     return {
       width: r.width,
       height: r.height,
       gridUrl,
+      gridSrcset,
+      gridSizes: `(max-width: 639px) calc(50vw - 6px), ${desktopSizePx}px`,
       enlargedUrl,
       title,
       description,
@@ -120,10 +138,10 @@ const items = await Promise.all(
 ---
 
 <div id="print-filters" class="flex flex-wrap gap-2 px-2 py-4">
-  <button class="filter-btn active" data-filter="">All</button>
-  <button class="filter-btn" data-filter="concert">Concert</button>
-  <button class="filter-btn" data-filter="knicks">Knicks</button>
-  <button class="filter-btn" data-filter="landscape">Landscape</button>
+  <button class="filter-btn active" data-filter="" aria-pressed="true">All</button>
+  <button class="filter-btn" data-filter="concert" aria-pressed="false">Concert</button>
+  <button class="filter-btn" data-filter="knicks" aria-pressed="false">Knicks</button>
+  <button class="filter-btn" data-filter="landscape" aria-pressed="false">Landscape</button>
 </div>
 
 <div class="flex flex-wrap m-0.5 select-none" id="print-grid">
@@ -135,16 +153,20 @@ const items = await Promise.all(
         data-category={item.category}
         style={`flex-grow: ${(item.width * 350) / item.height}; flex-basis: ${(item.width * 350) / item.height}px;`}
         onclick="openPrint(this)"
+        tabindex="0"
+        role="button"
+        aria-label={`View ${item.title}`}
       >
         {/* aspect-ratio spacer */}
         <div class="block" style={`padding-bottom: ${(item.height / item.width) * 100}%`} />
 
         <img
           src={item.gridUrl}
+          srcset={item.gridSrcset}
+          sizes={item.gridSizes}
           alt={item.title}
-          loading={index <= 8 ? "eager" : "lazy"}
+          loading="lazy"
           draggable="false"
-          oncontextmenu="return false"
           class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]"
         />
 
@@ -173,6 +195,9 @@ const items = await Promise.all(
 <div
   id="print-lightbox"
   class="fixed inset-0 z-50 hidden items-stretch justify-center bg-black/95 backdrop-blur-sm md:items-center"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="print-lightbox-title"
   aria-hidden="true"
 >
   <div class="relative flex h-full w-full flex-col md:flex-row">
@@ -183,7 +208,6 @@ const items = await Promise.all(
         src=""
         alt=""
         draggable="false"
-        oncontextmenu="return false"
         class="max-h-full max-w-full select-none object-contain"
       />
     </div>
@@ -215,6 +239,7 @@ const items = await Promise.all(
     {/* controls */}
     <button
       type="button"
+      id="print-lightbox-close"
       onclick="closePrint()"
       class="absolute left-3 top-3 z-10 rounded-full bg-neutral-800/70 p-3 hover:bg-neutral-700"
     >
@@ -240,53 +265,67 @@ const items = await Promise.all(
   </div>
 </div>
 
-<script define:vars={{ items, inquireEmail: "josh@rehders.photos" }} is:inline>
+<script define:vars={{
+  // Grid-only fields (gridUrl/gridSrcset/gridSizes/width/height/category) are
+  // already on the DOM — trimmed here to shrink the duplicated HTML payload.
+  items: items.map(({ enlargedUrl, title, description, sizes, priceSummary }) => (
+    { enlargedUrl, title, description, sizes, priceSummary }
+  )),
+  inquireEmail: "josh@rehders.photos",
+}} is:inline>
   const PRINTS = items;
   let currentFilter = "";
   let currentVisiblePos = 0;
-
-  // ── Shuffle DOM tiles on load ──────────────────────────────────────────────
-
-  function shuffleGrid() {
-    const grid = document.getElementById("print-grid");
-    const tiles = [...grid.querySelectorAll(".print-tile")];
-    for (let i = tiles.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      grid.appendChild(tiles[j]);
-      tiles.splice(j, 1);
-    }
-  }
-
-  shuffleGrid();
-
-  // ── Visible index tracking (DOM-order aware) ────────────────────────────────
+  let currentIndex = null; // absolute PRINTS index of the open item, for filter re-anchoring
+  let lightboxOpen = false;
+  let lastFocusedTile = null;
+  let visibleIndicesCache = null; // declared early: applyFilter below writes it
 
   function rebuildVisibleIndices() {
-    return [...document.querySelectorAll(".print-tile")]
+    if (visibleIndicesCache) return visibleIndicesCache;
+    visibleIndicesCache = [...document.querySelectorAll(".print-tile")]
       .filter((t) => t.style.display !== "none")
       .map((t) => Number(t.dataset.index));
+    return visibleIndicesCache;
   }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
+  // Applied before shuffle/eager-promotion below so a filtered deep-link never
+  // lets hidden tiles consume the eager/high-priority budget.
 
-  function applyFilter(filter) {
+  // `updateHistory` is false for popstate/initial-URL application — those are
+  // already reflecting history, so pushing again would create a bogus entry.
+  function applyFilter(filter, { updateHistory = true } = {}) {
+    if (filter === currentFilter) return; // short-circuit no-op re-clicks
     currentFilter = filter;
+    visibleIndicesCache = null; // invalidate on real filter change only
     const tiles = document.querySelectorAll(".print-tile");
     tiles.forEach((tile) => {
       const cat = tile.dataset.category ?? "";
       tile.style.display = (!filter || cat === filter) ? "" : "none";
     });
 
-    // Sync button active state
     document.querySelectorAll(".filter-btn").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.filter === filter);
+      const isActive = btn.dataset.filter === filter;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-pressed", String(isActive));
     });
 
-    // Update URL param without reload
-    const url = new URL(window.location.href);
-    if (filter) url.searchParams.set("filter", filter);
-    else url.searchParams.delete("filter");
-    history.pushState({ filter }, "", url.toString());
+    if (updateHistory) {
+      const url = new URL(window.location.href);
+      if (filter) url.searchParams.set("filter", filter);
+      else url.searchParams.delete("filter");
+      history.pushState({ filter }, "", url.toString());
+    }
+
+    // Re-anchor the open lightbox to its item's new position, or close it
+    // safely if the item is no longer visible under this filter.
+    if (lightboxOpen && currentIndex !== null) {
+      const vis = rebuildVisibleIndices();
+      const pos = vis.indexOf(currentIndex);
+      if (pos >= 0) currentVisiblePos = pos;
+      else closePrint();
+    }
   }
 
   // Wire filter buttons
@@ -294,16 +333,111 @@ const items = await Promise.all(
     btn.addEventListener("click", () => applyFilter(btn.dataset.filter ?? ""));
   });
 
-  // Apply filter from URL on load
+  // Apply filter from URL on load — before shuffle, so eager/high promotion
+  // below only ever considers tiles that are actually visible.
   const initialFilter = new URL(window.location.href).searchParams.get("filter") ?? "";
-  if (initialFilter) applyFilter(initialFilter);
+  if (initialFilter) applyFilter(initialFilter, { updateHistory: false });
 
-  // Handle back/forward
-  window.addEventListener("popstate", (e) => {
-    applyFilter((e.state && e.state.filter) || "");
+  // popstate's history entry may predate any pushState (e.g. a page loaded
+  // directly at ?filter=X), so read the now-navigated URL, not event.state.
+  window.addEventListener("popstate", () => {
+    const filter = new URL(window.location.href).searchParams.get("filter") ?? "";
+    applyFilter(filter, { updateHistory: false });
   });
 
+  // ── Shuffle DOM tiles, then promote the real first-visual tiles ────────────
+  // Runs after the initial filter above so hidden (filtered-out) tiles are
+  // never candidates. Default loading="lazy" keeps the preload scanner from
+  // front-running this reorder with stale pre-shuffle guesses.
+
+  function shuffleGrid() {
+    const grid = document.getElementById("print-grid");
+    const tiles = [...grid.querySelectorAll(".print-tile")];
+    for (let i = tiles.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+    }
+    // Single DocumentFragment append = one reflow instead of one per tile.
+    const fragment = document.createDocumentFragment();
+    tiles.forEach((t) => fragment.appendChild(t));
+    grid.appendChild(fragment);
+    return tiles;
+  }
+
+  const orderedTiles = shuffleGrid();
+  // Only tiles the initial filter left visible are eligible for eager/high.
+  const visibleOrderedTiles = orderedTiles.filter((t) => t.style.display !== "none");
+
+  // Random masonry means DOM tile 0 isn't reliably the largest visible one —
+  // measure real intersection area (one getBoundingClientRect batch, no
+  // interceding writes/rAF) so "high" priority lands on the actual LCP candidate.
+  // Eager count is viewport-tuned: mobile shows ~4 tiles per row (fewer,
+  // narrower images to avoid contention); desktop needs ~2 rows (9) since
+  // measured LCP candidates land past index 6 there.
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const eagerCount = vw < 640 ? 4 : 9;
+  const eagerCandidates = visibleOrderedTiles
+    .slice(0, eagerCount)
+    .map((tile) => ({ tile, img: tile.querySelector("img") }))
+    .filter((c) => c.img);
+
+  let winner = null;
+  let winnerArea = 0;
+  for (const c of eagerCandidates) {
+    const r = c.tile.getBoundingClientRect(); // clips against actual viewport bounds
+    const w = Math.min(r.right, vw) - Math.max(r.left, 0);
+    const h = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+    const area = Math.max(0, w) * Math.max(0, h);
+    if (area > winnerArea) {
+      winnerArea = area;
+      winner = c.img;
+    }
+  }
+  if (winner) winner.fetchPriority = "high"; // set before flipping loading below
+  for (const c of eagerCandidates) c.img.loading = "eager";
+
   // ── Lightbox ───────────────────────────────────────────────────────────────
+
+  // Bounded ±1 neighbor prefetch/decode cache — pruned to the current
+  // neighbor pair on every step so it can't grow across navigation.
+  const prefetchCache = new Map(); // enlargedUrl -> Image
+
+  // Only delete if this exact (possibly stale/replaced) Image still occupies
+  // the slot, so a fresh retry inserted after a failure is never evicted.
+  function evictIfStale(url, img) {
+    if (prefetchCache.get(url) === img) prefetchCache.delete(url);
+  }
+
+  function cachedImage(url, priority) {
+    let img = prefetchCache.get(url);
+    if (!img) {
+      img = new Image();
+      img.decoding = "async";
+      if (priority) img.fetchPriority = priority; // must be set before src
+      img.addEventListener("error", () => evictIfStale(url, img)); // let later opens retry
+      img.src = url;
+      prefetchCache.set(url, img);
+    } else if (priority) {
+      img.fetchPriority = priority; // promoted from neighbor to active
+    }
+    return img;
+  }
+
+  function prefetchNeighbors(vis, pos) {
+    if (!vis.length) return; // nothing visible to prefetch
+    // Includes delta 0 (current) so the imminent cachedImage(url, "high") call
+    // in showPrint reuses this entry instead of evicting it moments earlier.
+    const wanted = new Set();
+    for (const delta of [-1, 0, 1]) {
+      const item = PRINTS[vis[(pos + delta + vis.length) % vis.length]];
+      if (item) wanted.add(item.enlargedUrl);
+    }
+    for (const url of prefetchCache.keys()) {
+      if (!wanted.has(url)) prefetchCache.delete(url); // bounded to at most these 3
+    }
+    wanted.forEach((url) => cachedImage(url, "low"));
+  }
 
   function renderPricing(item) {
     const sizesEl = document.getElementById("print-lightbox-sizes");
@@ -333,51 +467,96 @@ const items = await Promise.all(
     }
   }
 
-  function showPrint(vis, visiblePos) {
-    const index = vis[visiblePos];
-    if (index === undefined) return;
-    currentVisiblePos = visiblePos;
-    const item = PRINTS[index];
+  let showToken = 0; // bumped per call so a slower, superseded swap can bail
 
-    const img = document.getElementById("print-lightbox-img");
-    img.src = item.enlargedUrl;
-    img.alt = item.title;
+  function renderMetadata(item) {
     document.getElementById("print-lightbox-title").textContent = item.title;
-
     const descEl = document.getElementById("print-lightbox-desc");
     descEl.textContent = item.description || "";
     descEl.style.display = item.description ? "" : "none";
-
     renderPricing(item);
-
     const inquire = document.getElementById("print-lightbox-inquire");
-    const subject = encodeURIComponent(`Print inquiry: ${item.title}`);
-    inquire.href = `mailto:${inquireEmail}?subject=${subject}`;
+    inquire.href = `mailto:${inquireEmail}?subject=${encodeURIComponent(`Print inquiry: ${item.title}`)}`;
+  }
+
+  async function showPrint(vis, visiblePos) {
+    const index = vis[visiblePos];
+    if (index === undefined) return; // empty visible set: safe no-op
+    currentVisiblePos = visiblePos;
+    currentIndex = index; // track absolute index for filter re-anchoring
+    const item = PRINTS[index];
+    const token = ++showToken;
+
+    const img = document.getElementById("print-lightbox-img");
+    // Own grid thumbnail is always the correct match for this item's metadata;
+    // `src` covers a lazy tile that hasn't set `currentSrc` from a real fetch yet.
+    const gridImg = document.querySelector(`.print-tile[data-index="${index}"] img`);
+    const fallbackSrc = gridImg && (gridImg.currentSrc || gridImg.src);
+    if (fallbackSrc) {
+      img.src = fallbackSrc;
+      img.alt = gridImg.alt || item.title;
+    }
+
+    // Metadata/inquiry/prefetch run synchronously so they never lag behind
+    // a slow enlarged decode and pair with the wrong photo.
+    renderMetadata(item);
+    prefetchNeighbors(vis, visiblePos);
+
+    // `.complete` is also true for a failed image, so gate on naturalWidth too.
+    const preload = cachedImage(item.enlargedUrl, "high");
+    const isReady = () => preload.complete && preload.naturalWidth > 0;
+    if (!isReady()) {
+      // Broken/slow: keep the thumbnail fallback, and evict so a later open retries.
+      try { await preload.decode(); } catch { evictIfStale(item.enlargedUrl, preload); }
+    }
+    if (token !== showToken) return; // superseded by a newer step: leave state alone
+
+    if (isReady()) {
+      img.fetchPriority = "high";
+      img.src = item.enlargedUrl; // decoded — swaps without a blank frame
+      img.alt = item.title;
+    }
   }
 
   function openPrint(tile) {
     const index = Number(tile.dataset.index);
     const vis = rebuildVisibleIndices();
+    if (!vis.length) return; // nothing visible under the current filter
     const pos = vis.indexOf(index);
     currentVisiblePos = pos >= 0 ? pos : 0;
     showPrint(vis, currentVisiblePos);
+    lastFocusedTile = tile;
+    lightboxOpen = true;
     const lb = document.getElementById("print-lightbox");
     lb.classList.remove("hidden");
     lb.classList.add("flex");
     lb.setAttribute("aria-hidden", "false");
     document.body.classList.add("overflow-hidden");
+    document.getElementById("print-lightbox-close")?.focus();
   }
 
   function closePrint() {
+    showToken++; // discard any in-flight decode/swap
     const lb = document.getElementById("print-lightbox");
     lb.classList.add("hidden");
     lb.classList.remove("flex");
     lb.setAttribute("aria-hidden", "true");
     document.body.classList.remove("overflow-hidden");
+    lightboxOpen = false;
+    currentIndex = null;
+    // Fall back to the active filter button if the triggering tile was hidden
+    // by the filter change that caused this close, so focus isn't lost.
+    const focusTarget =
+      lastFocusedTile && lastFocusedTile.style.display !== "none"
+        ? lastFocusedTile
+        : document.querySelector(".filter-btn.active");
+    focusTarget?.focus();
+    lastFocusedTile = null;
   }
 
   function stepPrint(delta) {
     const vis = rebuildVisibleIndices();
+    if (!vis.length) return; // avoid a % 0 / NaN position
     const next = (currentVisiblePos + delta + vis.length) % vis.length;
     currentVisiblePos = next;
     showPrint(vis, next);
@@ -388,24 +567,68 @@ const items = await Promise.all(
   window.closePrint = closePrint;
   window.stepPrint = stepPrint;
 
+  // Delegated so shuffled/promoted tiles are covered without per-tile listeners.
+  document.getElementById("print-grid").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const tile = e.target.closest(".print-tile");
+    if (!tile) return;
+    e.preventDefault();
+    openPrint(tile);
+  });
+
+  // Anti-theft: block the "save image" context menu on protected imagery.
+  document.getElementById("print-grid").addEventListener("contextmenu", (e) => {
+    if (e.target.tagName === "IMG") e.preventDefault();
+  });
+  document.getElementById("print-lightbox-img").addEventListener("contextmenu", (e) => e.preventDefault());
+
   document.addEventListener("keydown", (e) => {
     const lb = document.getElementById("print-lightbox");
     if (!lb || lb.classList.contains("hidden")) return;
     if (e.key === "Escape") closePrint();
     else if (e.key === "ArrowLeft") stepPrint(-1);
     else if (e.key === "ArrowRight") stepPrint(1);
+    else if (e.key === "Tab") trapFocus(e, lb);
   });
+
+  // Keep Tab from escaping the dialog to the background page.
+  function trapFocus(e, lb) {
+    const focusables = [...lb.querySelectorAll('button, a[href], [tabindex]:not([tabindex="-1"])')].filter(
+      (el) => el.offsetParent !== null
+    );
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    } else if (!focusables.includes(active)) {
+      e.preventDefault(); // focus drifted outside the dialog — pull it back in
+      first.focus();
+    }
+  }
 
   document.getElementById("print-lightbox")?.addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closePrint();
   });
 
   let touchStartX = 0;
+  let touchStartY = 0;
   const lbEl = document.getElementById("print-lightbox");
-  lbEl?.addEventListener("touchstart", (e) => { touchStartX = e.changedTouches[0].screenX; }, { passive: true });
+  lbEl?.addEventListener("touchstart", (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+  }, { passive: true });
   lbEl?.addEventListener("touchend", (e) => {
     const dx = e.changedTouches[0].screenX - touchStartX;
-    if (Math.abs(dx) > 50) stepPrint(dx < 0 ? 1 : -1);
+    const dy = e.changedTouches[0].screenY - touchStartY;
+    // Require horizontal dominance so vertical/diagonal metadata scrolling
+    // isn't misread as a step gesture.
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) stepPrint(dx < 0 ? 1 : -1);
   });
 </script>
 
@@ -415,6 +638,13 @@ const items = await Promise.all(
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  /* Safe: the aspect-ratio spacer already reserves tile height. Standalone
+     rule — delete this block alone if CLS profiling regresses. */
+  .print-tile {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 250px;
   }
 
   .filter-btn {

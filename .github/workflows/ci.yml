@@ -1,0 +1,36 @@
+name: CI
+
+on: [pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - run: npm ci
+
+      # Fork and Dependabot PRs cannot access the required Cloudinary secrets.
+      - name: Build
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        run: npm run build
+        env:
+          PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.PUBLIC_CLOUDINARY_CLOUD_NAME }}
+          PUBLIC_CLOUDINARY_API_KEY: ${{ secrets.PUBLIC_CLOUDINARY_API_KEY }}
+          SECRET_CLOUDINARY_API_KEY: ${{ secrets.SECRET_CLOUDINARY_API_KEY }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
+          CF_D1_API_TOKEN: ${{ secrets.CF_D1_API_TOKEN }}
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Existing formatting debt is reported without blocking feature work.
+      - name: Format check (informational)
+        run: npm run format:check
+        continue-on-error: true

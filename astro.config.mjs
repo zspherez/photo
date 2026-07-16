@@ -26,7 +26,7 @@ export default defineConfig({
     tailwind(),
     partytown({
       config: {
-        debug: true,
+        debug: import.meta.env.DEV,
         forward: ["dataLayer.push", "gtag"],
       },
     }),

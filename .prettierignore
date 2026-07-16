@@ -1,0 +1,6 @@
+dist/
+.output/
+.astro/
+.wrangler/
+node_modules/
+public/~partytown/

@@ -1,3 +1,13 @@
 /*
   Cross-Origin-Embedder-Policy: credentialless
   Cross-Origin-Opener-Policy: same-origin
+
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Font filenames under public/fonts/ are not content-hashed — if a font file
+# is ever replaced in place under the same name, this immutable rule caches
+# the stale bytes for up to a year client-side. Acceptable given fonts rarely
+# change, but flagged here for visibility.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable

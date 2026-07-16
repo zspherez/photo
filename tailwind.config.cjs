@@ -51,7 +51,6 @@ module.exports = {
     },
   },
   plugins: [
-    require('@tailwindcss/typography'),
     plugin(function ({ addVariant }) {
       addVariant("fullscreen", ["&#fullscreen", "#fullscreen &"]);
     }),

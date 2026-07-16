@@ -23,8 +23,6 @@ const extendedMenuItems = [
 const menuItems = extended 
   ? [...baseMenuItems, ...extendedMenuItems, { name: 'ABOUT', href: '/about/' }]
   : [...baseMenuItems, { name: 'ABOUT', href: '/about/' }];
-
-console.log(Astro.url.pathname)
 ---
 
 <header class="header">

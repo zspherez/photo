@@ -1,7 +1,6 @@
 ---
 import { v2 as cloudinary } from "cloudinary";
 import Icon from './Icon.astro';
-import { z } from "astro:content";
 
 export interface Props {
   folder: string; // Main folder with videos
@@ -15,8 +14,11 @@ export interface CloudinaryResource {
   height: number;
   duration: number;
   aspect_ratio: number;
-  context: { alt: string };
+  context?: { alt?: string };
 }
+
+// Tiles beyond this index (DOM order) get their poster gated by data-poster/observer.
+const EAGER_POSTER_COUNT = 4;
 
 cloudinary.config({
   cloud_name: import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME,
@@ -25,32 +27,29 @@ cloudinary.config({
   secure: true,
 });
 
-// Fetch videos from the main folder
-const videoSearch = await cloudinary.search
-  .expression(`folder:${Astro.props.folder} AND resource_type:video`)
-  .with_field("context")
-  .sort_by("display_name", "asc")
-  .max_results(500)
-  .execute();
-
 // Determine thumbnail folder name
 const thumbnailFolderName = Astro.props.thumbnailFolder || `${Astro.props.folder}-thumbnails`;
 
-// Fetch thumbnails from the thumbnail folder
-const thumbnailSearch = await cloudinary.search
-  .expression(`folder:${thumbnailFolderName}`)
-  .sort_by("display_name", "asc")
-  .max_results(500)
-  .execute();
-
-console.log(`Total videos: ${videoSearch.resources.length}`);
-console.log(`Total thumbnails: ${thumbnailSearch.resources.length}`);
+// Fetch videos and thumbnails concurrently; the two searches are independent.
+const [videoSearch, thumbnailSearch] = await Promise.all([
+  cloudinary.search
+    .expression(`folder:${Astro.props.folder} AND resource_type:video`)
+    .with_field("context")
+    .sort_by("display_name", "asc")
+    .max_results(500)
+    .execute(),
+  cloudinary.search
+    .expression(`folder:${thumbnailFolderName}`)
+    .sort_by("display_name", "asc")
+    .max_results(500)
+    .execute(),
+]);
 
 const videos = videoSearch.resources as CloudinaryResource[];
 const thumbnails = thumbnailSearch.resources as CloudinaryResource[];
 
 // Create a mapping of video filenames to thumbnail URLs
-const thumbnailMap = new Map();
+const thumbnailMap = new Map<string, string>();
 thumbnails.forEach(thumbnail => {
   // Extract full filename from URL
   const fullFilename = thumbnail.secure_url.split('/').pop() || '';
@@ -85,31 +84,39 @@ function getThumbnailUrl(videoUrl: string): string {
     
     // Return the mapped thumbnail if available, otherwise fall back to default method
     if (thumbnailMap.has(baseName)) {
-      // Optimize thumbnail URL with Cloudinary parameters
-      return thumbnailMap.get(baseName).replace('/upload/', '/upload/f_auto,q_auto/');
+      // Cap width, aspect-preserving, no crop
+      return thumbnailMap.get(baseName)!.replace('/upload/', '/upload/c_limit,w_1000,f_auto,q_auto/');
     }
   }
   
   // Fall back to default method if no match found
   const baseUrl = videoUrl.replace(".mp4", ".jpg");
-  return baseUrl.replace('/upload/', '/upload/f_auto,q_auto/');
+  return baseUrl.replace('/upload/', '/upload/c_limit,w_1000,f_auto,q_auto/');
 }
 ---
 
-<div class="flex flex-wrap m-0.5">
-  {videos.map((video, index) => (
+<div class="flex flex-wrap m-0.5" data-gallery-count={videos.length}>
+  {videos.map((video, index) => {
+    const isEager = index < EAGER_POSTER_COUNT;
+    const posterUrl = getThumbnailUrl(video.secure_url);
+    const label = video.context?.alt || `Play video ${index + 1}`;
+    return (
     <div
       data-position={`${index == 0 ? "first" : index + 1 == videos.length ? "last" : "middle"}`}
+      role="button"
+      tabindex="0"
+      aria-label={label}
       onclick="setFullscreen(this)"
-      ontouchend="if (!isScrolling) setFullscreen(this)"
       class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"
       style={`flex-grow: ${video.width * 400 / video.height}; flex-basis: ${video.width * 400 / video.height}px;`}
     >
       <!-- placeholder for proper grid sizing -->
       <div class="block" style={`padding-bottom: ${video.height / video.width * 100}%`}></div>
 
-      <div role="status" class="fullscreen:block fullscreen:fixed z-[2] absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2">
-        <span class="sr-only">loading video...</span>
+      <div role="status" class="fullscreen:block fullscreen:fixed z-[2] absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2" style={isEager ? "display: none" : undefined}>
+        <span data-video-spinner aria-hidden="true" class="block h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white"></span>
+        <span data-video-error class="hidden rounded bg-black/70 px-3 py-2 text-sm text-white">Video unavailable</span>
+        <span data-video-status-text class="sr-only">Loading video...</span>
       </div>
 
       <div>
@@ -117,12 +124,10 @@ function getThumbnailUrl(videoUrl: string): string {
           id={`video-${index}`}
           loop webkit-playsinline playsinline
           preload="none"
-          onclick="this.paused ? this.play() : this.pause()"
-          onmouseover="previewVideo(this)"
-          onmouseout="resetVideo(this)"
-          oncanplay="this.parentNode.previousElementSibling.style.display = 'none';"
-          poster={getThumbnailUrl(video.secure_url)}
-          class="resource absolute top-0 h-full w-full object-cover align-bottom pointer-events-none fullscreen:pointer-events-auto opacity-0 transition-opacity ease-in duration-1000"
+          onclick="toggleVideoPlayback(this)"
+          data-poster={posterUrl}
+          poster={isEager ? posterUrl : undefined}
+          class={`resource absolute top-0 h-full w-full object-cover align-bottom pointer-events-none fullscreen:pointer-events-auto ${isEager ? "opacity-100" : "opacity-0 transition-opacity ease-in duration-1000"}`}
         >
           <source src={optimizeVideoUrl(video.secure_url)} type="video/mp4" />
           Your browser does not support HTML video.
@@ -130,153 +135,495 @@ function getThumbnailUrl(videoUrl: string): string {
       </div>
 
       <div class="video-duration pointer-events-none fullscreen:pl-6 fullscreen:pb-6 fullscreen:z-[2] fullscreen:left-0 fullscreen:fixed absolute bottom-0 flex w-full items-center justify-start bg-gradient-to-t from-black/50 to-transparent font-mono">
-        <Icon name="play" />
+        <span class="fullscreen:hidden"><Icon name="play" /></span>
         <div class="text-xs">
           <span id={`current-time-video-${index}`} class="current-time hidden fullscreen:inline-flex">0:00 / </span>
           <span>{new Date(video.duration * 1000).toISOString().slice(15, 19)}</span>
         </div>
       </div>
     </div>
-  ))}
+    );
+  })}
 </div>
 
 <div id="fullscreen-backdrop" class="fixed scale-200 inset-0 z-[1] w-screen h-screen bg-black pointer-events-none opacity-0 transition-opacity duration-200"></div>
 
 <!-- Replace your existing empty fullscreen-controls div with this -->
-<div id="fullscreen-controls" class="fixed top-0 z-[3] w-screen h-screen pointer-events-none opacity-0 transition-opacity duration-200">
-	<button type="button" onclick="prevResource()" class="fixed left-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 md:w-[25vw]">
+<div id="fullscreen-controls" role="dialog" aria-modal="true" aria-label="Video viewer" aria-hidden="true" class="fixed top-0 z-[3] w-screen h-screen pointer-events-none opacity-0 transition-opacity duration-200">
+	<button type="button" onclick="prevResource()" tabindex="-1" class="fixed left-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 focus-visible:opacity-100 md:w-[25vw]">
 	  <div class="absolute left-0 ml-4 rounded-full bg-neutral-700 p-2 md:ml-8 md:p-4">
 		<Icon name="left" />
 		<span class="sr-only">previous video</span>
 	  </div>
 	</button>
   
-	<button type="button" onclick="nextResource()" class="fixed right-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 md:w-[25vw]">
+	<button type="button" onclick="nextResource()" tabindex="-1" class="fixed right-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 focus-visible:opacity-100 md:w-[25vw]">
 	  <div class="absolute right-0 mr-4 rounded-full bg-neutral-700 p-2 md:mr-8 md:p-4">
 		<Icon name="right" />
 		<span class="sr-only">next video</span>
 	  </div>
 	</button>
+
+	<div class="fixed bottom-0 right-0 z-[3] mb-4 mr-4 flex gap-2">
+	  <button type="button" id="fullscreen-play-btn" onclick="toggleVideoPlayback(getFullscreenVideo())" tabindex="-1" aria-label="Pause video" class="rounded-full bg-neutral-700/50 p-3 hover:bg-neutral-700">
+		<span data-icon="pause"><Icon name="pause" /></span>
+		<span data-icon="play" class="hidden"><Icon name="play" /></span>
+	  </button>
+
+	  <button type="button" id="fullscreen-mute-btn" onclick="toggleFullscreenMute()" tabindex="-1" aria-label="Mute video" class="rounded-full bg-neutral-700/50 p-3 hover:bg-neutral-700">
+		<span data-icon="volume"><Icon name="volume" /></span>
+		<span data-icon="muted" class="hidden"><Icon name="muted" /></span>
+	  </button>
+	</div>
   
-	<button type="button" onclick="escapeFullscreen(true)" class="fixed ml-2 mt-2 rounded-full bg-neutral-700/50 p-3 hover:bg-neutral-700">
+	<button type="button" id="fullscreen-close-btn" onclick="escapeFullscreen(true)" tabindex="-1" class="fixed ml-2 mt-2 rounded-full bg-neutral-700/50 p-3 hover:bg-neutral-700">
 	  <Icon name="x" />
 	  <span class="sr-only">exit video</span>
 	</button>
   </div>
 
-<!-- Add this script at the end of the file, after your other scripts -->
+<!-- Gate offscreen poster fetches and reveal tiles as they near the viewport -->
 <script>
-	// Handle thumbnail loading and visibility
 	document.addEventListener("DOMContentLoaded", () => {
 	  const videoElements = document.querySelectorAll("video");
-	  
-	  videoElements.forEach(video => {
-		// Create a temporary image to detect when poster loads
-		const img = new Image();
-		
-		img.onload = () => {
-		  // When thumbnail loads, make video element visible
-		  video.style.opacity = "1";
-		  
-		  // Remove the loading indicator
-		  const loadingIndicator = video.parentNode.previousElementSibling;
-		  if (loadingIndicator) {
-			loadingIndicator.style.display = "none";
-		  }
+	  // Cache in-flight/completed poster loads so tiles sharing a URL share one fetch.
+	  interface PosterCacheEntry {
+		settled: boolean;
+		ok: boolean;
+		listeners: Array<(ok: boolean) => void>;
+	  }
+	  const posterCache = new Map<string, PosterCacheEntry>();
+
+	  function loadPoster(url: string, onDone: (ok: boolean) => void): void {
+		const cached = posterCache.get(url);
+		if (cached) {
+		  cached.settled ? onDone(cached.ok) : cached.listeners.push(onDone);
+		  return;
+		}
+		const entry: PosterCacheEntry = { settled: false, ok: false, listeners: [onDone] };
+		const settle = (ok: boolean) => {
+		  entry.settled = true;
+		  entry.ok = ok;
+		  entry.listeners.forEach((cb) => cb(ok));
+		  entry.listeners = [];
 		};
-		
-		// Set source to the poster URL
-		if (video.getAttribute('poster')) {
-		  img.src = video.getAttribute('poster');
+		const img = new Image();
+		img.onload = () => settle(true);
+		img.onerror = () => settle(false);
+		img.src = url;
+		posterCache.set(url, entry);
+	  }
+
+	  function revealPoster(video: HTMLVideoElement, loadingIndicator: HTMLElement | null, posterUrl: string | null): void {
+		const tile = video.closest("[data-position]");
+		if (tile?.id === "fullscreen" || tile?.getAttribute("data-opening") === "true") {
+		  return;
 		}
-		
-		// For already loaded posters
-		if (img.complete) {
-		  img.onload();
+		if (posterUrl) {
+		  video.poster = posterUrl;
 		}
-	  });
-	  
-	  // Add Intersection Observer for lazy loading videos
+		video.style.opacity = "1";
+		if (loadingIndicator) {
+		  loadingIndicator.style.display = "none";
+		}
+	  }
+
+	  // Widened rootMargin so fast mobile scrolling doesn't outrun the fetch.
 	  const observer = new IntersectionObserver((entries) => {
 		entries.forEach((entry) => {
-		  if (entry.isIntersecting) {
-			const video = entry.target;
-			
-			// Make video visible if it wasn't already
-			video.style.opacity = "1";
-			
-			// Remove the observer once visibility is handled
-			observer.unobserve(video);
+		  if (!entry.isIntersecting) return;
+
+		  const video = entry.target;
+		  if (!(video instanceof HTMLVideoElement)) return;
+		  observer.unobserve(video);
+
+		  const sibling = video.parentElement?.previousElementSibling;
+		  const loadingIndicator = sibling instanceof HTMLElement ? sibling : null;
+		  const posterUrl = video.dataset.poster;
+
+		  // Eager tiles already carry a server-rendered poster; just tidy state.
+		  if (video.getAttribute("poster") || !posterUrl) {
+			revealPoster(video, loadingIndicator, null);
+			return;
 		  }
+
+		  // Wait for poster bytes; reveal without one on failure rather than staying stuck.
+		  loadPoster(posterUrl, (ok) => revealPoster(video, loadingIndicator, ok ? posterUrl : null));
 		});
 	  }, {
-		rootMargin: "200px"
+		rootMargin: "300px"
 	  });
-	  
-	  // Observe all video elements
+
 	  videoElements.forEach(video => observer.observe(video));
 	});
   </script>
   
 <!-- Add this right before the existing script tag or combine with it -->
-<script client:inline>
+<script is:inline>
 	let isAnimating = false;
-  
-	function setFullscreen(element, animation) {
-	  // ignore clicks when already fullscreen
-	  if (element.id == "fullscreen") {
+	// Set when a close is requested mid-animation; serviced once the current animation settles.
+	let pendingClose = false;
+	// Set only while a frame wait is in flight (before geometry starts); lets Escape abort outright.
+	let pendingOpen = null;
+	// Tile that opened the lightbox, so focus can return to it on close.
+	let openerElement = null;
+	// User's mute choice, carried across fullscreen opens/slides until they change it.
+	let fullscreenMuted = false;
+	// Active prev/next slide controller (incoming prep + transition), or null when idle.
+	let slideState = null;
+	// Net direction of arrow/swipe inputs coalesced during a transition; drained after settle.
+	let queuedNav = 0;
+	// Bounds the first-frame wait so a stalled/blocked video never holds the animation open.
+	// Generous enough to avoid a premature no-frame fallback on a slow direct open.
+	const FRAME_READY_TIMEOUT_MS = 750;
+	// One simultaneous incoming/outgoing transition, kept in a snappy 180-220ms window.
+	const SLIDE_DURATION_MS = 200;
+	// Lets prev/next/slide no-op for 0/1-video galleries.
+	const galleryCount = Number(document.querySelector("[data-gallery-count]")?.dataset.galleryCount || 0);
+
+	function getFullscreenVideo() {
+	  const fullscreen = document.getElementById("fullscreen");
+	  return fullscreen ? fullscreen.querySelector("video") : null;
+	}
+
+	function toggleFullscreenMute() {
+	  const video = getFullscreenVideo();
+	  if (!video) return;
+	  video.muted = !video.muted;
+	  fullscreenMuted = video.muted; // volumechange listener syncs the button UI
+	}
+
+	// Resolves onReady(hasFrame) once a real frame is decoded/renderable, or after a bounded
+	// timeout (hasFrame=false). timeoutMs defaults to the generous direct-open budget; slides pass a
+	// short budget so a stalled incoming falls back to its restored poster fast instead of hanging.
+	// Returns { finish, cancel }: finish(hasFrame) force-resolves early (e.g. play() rejects),
+	// cancel aborts without ever calling onReady (escaped mid-wait).
+	function waitForFirstFrame(video, onReady, timeoutMs = FRAME_READY_TIMEOUT_MS) {
+	  let settled = false;
+	  let rvfcHandle = null;
+	  let timeoutFrame = null;
+	  let timeoutId = null;
+	  // rVFC is the authoritative "frame actually painted" signal; when it exists, canplay
+	  // reliably fires first and would start geometry before a frame is real, so don't race it.
+	  const hasRVFC = typeof video.requestVideoFrameCallback === "function";
+
+	  function onFrameEvent() {
+		finish(true);
+	  }
+
+	  function onTimeout() {
+		finish(false);
+	  }
+
+	  function cleanup() {
+		if (timeoutId !== null) clearTimeout(timeoutId);
+		if (timeoutFrame !== null) cancelAnimationFrame(timeoutFrame);
+		if (rvfcHandle !== null && typeof video.cancelVideoFrameCallback === "function") {
+		  video.cancelVideoFrameCallback(rvfcHandle);
+		}
+		video.removeEventListener("playing", onFrameEvent);
+		video.removeEventListener("canplay", onFrameEvent);
+		video.removeEventListener("loadeddata", onFrameEvent);
+	  }
+
+	  function finish(hasFrame) {
+		if (settled) return;
+		settled = true;
+		cleanup();
+		onReady(hasFrame);
+	  }
+
+	  function cancel() {
+		if (settled) return;
+		settled = true; // blocks any stale rVFC/event/timeout callback from firing late
+		cleanup();
+	  }
+
+	  // Drive the visual deadline from rAF as well as setTimeout. Browsers can clamp media-related
+	  // timers past a second while still rendering frames, which made a 90ms slide budget stutter.
+	  const deadline = performance.now() + timeoutMs;
+	  function checkVisualDeadline(now) {
+		if (now >= deadline) onTimeout();
+		else timeoutFrame = requestAnimationFrame(checkVisualDeadline);
+	  }
+	  timeoutFrame = requestAnimationFrame(checkVisualDeadline);
+	  timeoutId = setTimeout(onTimeout, timeoutMs);
+
+	  // Already has a paintable frame (e.g. warmed up by a hover preview).
+	  if (video.readyState >= 2) {
+		finish(true);
+		return { finish, cancel };
+	  }
+
+	  if (hasRVFC) {
+		rvfcHandle = video.requestVideoFrameCallback(onFrameEvent);
+	  } else {
+		video.addEventListener("playing", onFrameEvent, { once: true });
+		video.addEventListener("canplay", onFrameEvent, { once: true });
+		video.addEventListener("loadeddata", onFrameEvent, { once: true });
+	  }
+
+	  return { finish, cancel };
+	}
+
+	// Neighbor tiles bumped to preload="auto" so the immediate prev/next are frame-ready; bounded to 2.
+	let preloadedNeighbors = [];
+
+	function getNeighborTiles(element) {
+	  const prev = element.dataset.position === "first"
+		? document.querySelector("[data-position='last']")
+		: element.previousElementSibling;
+	  const next = element.dataset.position === "last"
+		? document.querySelector("[data-position='first']")
+		: element.nextElementSibling;
+	  // De-dupe: in a 2-tile gallery, "prev" and "next" both wrap to the same tile.
+	  return [...new Set([prev, next].filter((tile) => tile && tile !== element))];
+	}
+
+	function clearNeighborPreload(exempt) {
+	  preloadedNeighbors.forEach((tile) => {
+		// Skip the tile becoming current, and any tile mid hover-preview.
+		if (tile === exempt) return;
+		const video = tile.querySelector("video");
+		if (video && video.paused && video.preload !== "none") {
+		  video.preload = "none";
+		  // Release after the transition handoff. A synchronous load() here made rapid arrows
+		  // tear down media on the critical rendering path, and could reload the same neighbor.
+		  const release = () => {
+			if (
+			  tile.id === "fullscreen"
+			  || tile.getAttribute("data-opening") === "true"
+			  || preloadedNeighbors.includes(tile)
+			) {
+			  return;
+			}
+			if (video.paused && video.preload === "none") video.load();
+		  };
+		  if (typeof window.requestIdleCallback === "function") {
+			window.requestIdleCallback(release, { timeout: 500 });
+		  } else {
+			setTimeout(release, 0);
+		  }
+		}
+	  });
+	  preloadedNeighbors = [];
+	}
+
+	function preloadNeighborTiles(element) {
+	  // Exempt: it may already be a neighbor, and clearing would abort its buffer pre-play.
+	  clearNeighborPreload(element);
+	  preloadedNeighbors = getNeighborTiles(element);
+	  preloadedNeighbors.forEach((tile) => {
+		const video = tile.querySelector("video");
+		if (video && video.preload === "none") {
+		  video.preload = "auto";
+		  video.load(); // re-trigger resource selection under the new preload hint
+		}
+	  });
+	}
+
+	function setFullscreen(element) {
+	  // ignore opens while already fullscreen or an animation is still in flight
+	  if (element.id == "fullscreen" || isAnimating) {
 		return;
 	  }
-  
+
+	  // Return focus to the video the user is currently viewing, including after slides.
+	  openerElement = element;
+
 	  disableScrolling();
-	  enableFullscreenControls();
-	  element.id = "fullscreen";
+	  preloadNeighborTiles(element);
+	  element.setAttribute("data-opening", "true");
   
 	  const resource = element.querySelector(".resource");
-	  
-	  if (animation) {
-		isAnimating = true;
-  
-		resource.classList.add(animation);
-		fullscreenResource(resource)
-  
-		setTimeout(() => {
-		  resource.classList.remove(animation);
-		  isAnimating = false;
-		}, 200);
-	  } else {
+	  const loadingIndicator = element.querySelector('[role="status"]');
+	  const loadingSpinner = loadingIndicator?.querySelector("[data-video-spinner]");
+	  const loadingError = loadingIndicator?.querySelector("[data-video-error]");
+	  const loadingStatusText = loadingIndicator?.querySelector("[data-video-status-text]");
+	  loadingSpinner?.classList.remove("hidden");
+	  loadingError?.classList.add("hidden");
+	  if (loadingStatusText) loadingStatusText.textContent = "Loading video...";
+	  const loadingTimer = setTimeout(() => {
+		if (loadingIndicator) loadingIndicator.style.display = "block";
+	  }, 120);
+	  if (
+		resource.tagName === "VIDEO"
+		&& !resource.getAttribute("poster")
+		&& resource.dataset.poster
+	  ) {
+		resource.poster = resource.dataset.poster;
+	  }
+
+	  // Gate the visual open on a real frame so neither the poster nor a black frame flashes.
+	  isAnimating = true;
+
+	  let waitHandle = null;
+
+	  function revealResourceImmediately() {
+		resource.classList.remove("opacity-0", "transition-opacity", "ease-in", "duration-1000");
+		resource.style.opacity = "1";
+	  }
+
+	  function beginVisualOpen(hasFrame) {
+		pendingOpen = null; // geometry is committing now; no longer cancellable
+		clearTimeout(loadingTimer);
+		element.removeAttribute("data-opening");
+		element.id = "fullscreen";
+		enableFullscreenControls();
+		document.getElementById("fullscreen-close-btn")?.focus();
+		if (resource.tagName === "VIDEO" && resource.error) {
+		  setFullscreenError(resource);
+		} else if (loadingIndicator) {
+		  loadingIndicator.style.display = hasFrame || resource.paused ? "none" : "block";
+		}
+		revealResourceImmediately();
+
+		// Trust the evidence passed in, not a re-check: readyState can still read <2 even
+		// though rVFC/frame events already proved a frame was decoded and painted.
+		if (resource.tagName === "VIDEO" && hasFrame) {
+		  resource.removeAttribute("poster");
+		}
+		if (resource.tagName === "VIDEO") {
+		  if (hasFrame) resource.muted = fullscreenMuted;
+		  updatePlayButtonUI(resource);
+		  updateMuteButtonUI(resource);
+		}
+
 		zoomIn(resource);
 	  }
-	  
-	  // Start playing video when in fullscreen
+
+	  // Aborts a still-pending open outright (no geometry ever ran) instead of queueing a close.
+	  function cancelPendingOpen() {
+		if (!pendingOpen) return;
+		pendingOpen = null;
+		if (waitHandle) waitHandle.cancel();
+		clearTimeout(loadingTimer);
+		element.removeAttribute("data-opening");
+		if (loadingIndicator) loadingIndicator.style.display = "none";
+
+		if (resource.tagName === "VIDEO") {
+		  resource.pause();
+		  resource.currentTime = 0;
+		  resetVideoTimeDisplay(resource);
+		  if (resource.dataset.poster) resource.poster = resource.dataset.poster;
+		  resource.load(); // release whatever play() had begun fetching/decoding
+		}
+		revealResourceImmediately();
+
+		clearNeighborPreload();
+		element.removeAttribute("id");
+		disableFullscreenControls();
+		enableScrolling();
+		document.getElementById("fullscreen-controls").querySelectorAll("button").forEach((button) => button.blur());
+		isAnimating = false;
+		pendingClose = false;
+		queuedNav = 0;
+
+		if (openerElement) {
+		  openerElement.focus({ preventScroll: true });
+		  openerElement = null;
+		}
+	  }
+
+	  pendingOpen = { cancel: cancelPendingOpen };
+
 	  if (resource.tagName === "VIDEO") {
-		resource.play();
+		// Stay muted while waiting so audio cannot lead the visual transition.
+		resource.muted = true;
+		const playPromise = resource.play();
+		if (playPromise && typeof playPromise.catch === "function") {
+		  playPromise.catch(() => {
+			if (isFullscreenVideo(resource)) updatePlayButtonUI(resource);
+			if (resource.error) setFullscreenError(resource);
+			if (waitHandle) waitHandle.finish(false); // no frame evidence; no point waiting out the timeout
+			if (loadingIndicator && !resource.error) loadingIndicator.style.display = "none";
+		  });
+		}
+		updatePlayButtonUI(resource);
+		updateMuteButtonUI(resource);
+
+		waitHandle = waitForFirstFrame(resource, beginVisualOpen);
+	  } else {
+		beginVisualOpen();
 	  }
 	}
   
+	// Runs a deferred close once isAnimating settles, otherwise drains any coalesced navigation.
+	function trySettleClose() {
+	  if (pendingClose) {
+		pendingClose = false;
+		queuedNav = 0; // a close request wins over queued slides
+		escapeFullscreen(true);
+		return;
+	  }
+	  runQueuedNavigation();
+	}
+
 	function escapeFullscreen(close) {
+	  if (close && pendingOpen) {
+		// Geometry never started; abort outright instead of queueing it to run then immediately close.
+		pendingOpen.cancel();
+		return;
+	  }
+
+	  if (slideState) {
+		// A slide owns the transition; a close must win by unwinding it cleanly.
+		if (close) slideState.requestClose();
+		return;
+	  }
+
 	  const fullscreen = document.getElementById("fullscreen");
-	
-	  if (!fullscreen || isAnimating) return;
-	
+
+	  if (!fullscreen) return;
+
+	  if (isAnimating) {
+		// Queue instead of dropping the request; trySettleClose fires it once settled.
+		if (close) pendingClose = true;
+		return;
+	  }
+
+	  const video = fullscreen.querySelector("video");
+	  const loadingIndicator = fullscreen.querySelector('[role="status"]');
+	  if (loadingIndicator) loadingIndicator.style.display = "none";
+	  if (video && video.dataset.poster) {
+		// Restore the thumbnail before the resource returns to the grid (slide or close).
+		video.poster = video.dataset.poster;
+	  }
+
 	  if (close) {
-		// Handle video reset before visual transition
-		const video = fullscreen.querySelector("video");
 		if (video) {
 		  // Pause the video
 		  video.pause();
 		  
 		  // Reset to the beginning to show the poster
 		  video.currentTime = 0;
+		  resetVideoTimeDisplay(video);
+		  video.preload = "none";
 		  
 		  // Force poster to display
 		  // This trick makes browsers show the poster again
 		  video.load();
 		}
 		
-		zoomOut(fullscreen.querySelector(".resource"));
+		clearNeighborPreload();
+		// Restore focus only once zoomOut's teardown actually finishes, not mid-animation.
+		zoomOut(fullscreen.querySelector(".resource"), () => {
+		  if (openerElement) {
+			openerElement.focus({ preventScroll: true });
+			openerElement = null;
+		  }
+		});
 		disableFullscreenControls();
 	  } else {
+		if (video) {
+		  // Slide-out needs the same repaint as close, or the tile freezes on its last frame.
+		  video.pause();
+		  video.currentTime = 0;
+		  resetVideoTimeDisplay(video);
+		  video.preload = "none"; // reset to grid baseline; preloadNeighborTiles re-raises it if still a neighbor
+		  video.load();
+		}
+
 		resetElement(fullscreen.querySelector(".resource"))
 	  }
 	  
@@ -284,76 +631,310 @@ function getThumbnailUrl(videoUrl: string): string {
 	
 	  document.getElementById("fullscreen-controls").querySelectorAll("button").forEach((button) => button.blur());
 	}
-  
-	function slideTo(element, animationOut, animationIn) {
-	  const fullscreen = document.getElementById("fullscreen");
-  
-	  if (!fullscreen || isAnimating) return;
-  
-	  const resource = fullscreen.querySelector(".resource");
-	  resource.classList.add(animationOut);
-  
-	  isAnimating = true;
-  
-	  setTimeout(() => {
-		resource.classList.remove(animationOut);
-  
-		isAnimating = false;
-  
-		// Pause current video
-		if (resource.tagName === "VIDEO") {
-		  resource.pause();
-		}
-  
-		escapeFullscreen(false);
-		setFullscreen(element, animationIn);
-	  }, 200);
-	}
-  
-	function prevResource() {
-	  const fullscreen = document.getElementById("fullscreen");
-  
-	  if (!fullscreen || isAnimating) return;
-  
-	  slideTo(
-		fullscreen.dataset.position == "first"
-		  ? document.querySelector("[data-position='last']")
-		  : fullscreen.previousSibling,
-		"animate-slide-out-right",
-		"animate-slide-in-left"
-	  );
-	}
-  
-	function nextResource() {
-	  const fullscreen = document.getElementById("fullscreen");
-  
-	  if (!fullscreen || isAnimating) return;
-  
-	  slideTo(
-		fullscreen.dataset.position == "last"
+
+	function getAdjacentTile(tile, direction) {
+	  if (direction > 0) {
+		return tile.dataset.position === "last"
 		  ? document.querySelector("[data-position='first']")
-		  : fullscreen.nextSibling,
-		"animate-slide-out-left",
-		"animate-slide-in-right"
-	  );
+		  : tile.nextElementSibling;
+	  }
+	  return tile.dataset.position === "first"
+		? document.querySelector("[data-position='last']")
+		: tile.previousElementSibling;
+	}
+
+	// prev = -1 (incoming enters from the left), next = +1 (incoming enters from the right).
+	function navigate(direction) {
+	  const fullscreen = document.getElementById("fullscreen");
+	  if (!fullscreen || galleryCount <= 1) return;
+
+	  // Never drop rapid inputs: coalesce into a net direction serviced once the current work settles.
+	  if (slideState || isAnimating || pendingOpen) {
+		queuedNav += direction;
+		return;
+	  }
+
+	  beginSlide(fullscreen, direction);
+	}
+
+	// Runs the net coalesced direction one step at a time once we're idle again.
+	function runQueuedNavigation() {
+	  if (queuedNav === 0) return;
+	  const fullscreen = document.getElementById("fullscreen");
+	  if (!fullscreen) {
+		queuedNav = 0;
+		return;
+	  }
+	  const step = queuedNav > 0 ? 1 : -1;
+	  queuedNav -= step;
+	  beginSlide(fullscreen, step);
+	}
+
+	// Prepares the incoming resource to first-frame/poster readiness while the outgoing stays fully
+	// visible, then slides both in one composited transform transition and atomically swaps at settle.
+	function beginSlide(outgoingTile, direction) {
+	  const incomingTile = getAdjacentTile(outgoingTile, direction);
+	  if (!incomingTile || incomingTile === outgoingTile) return;
+
+	  isAnimating = true;
+
+	  const outgoing = outgoingTile.querySelector(".resource");
+	  const incoming = incomingTile.querySelector(".resource");
+	  const outgoingIndicator = outgoingTile.querySelector('[role="status"]');
+	  const incomingIndicator = incomingTile.querySelector('[role="status"]');
+
+	  const enterFrom = direction > 0 ? "100%" : "-100%";
+	  const exitTo = direction > 0 ? "-100%" : "100%";
+
+	  let waitHandle = null;
+	  let inAnim = null;
+	  let outAnim = null;
+	  let phase = "preparing";
+	  let committedFrame = false;
+	  let closeAfter = false;
+	  let settled = false;
+
+	  const controller = { requestClose };
+	  slideState = controller;
+
+	  // Guard the incoming tile from the reveal observer while we drive it manually.
+	  incomingTile.setAttribute("data-opening", "true");
+
+	  // Reveal incoming now (drop the slow grid fade) and restore its poster so a real frame or the
+	  // poster shows through the transition, never a black flash.
+	  incoming.classList.remove("opacity-0", "transition-opacity", "ease-in", "duration-1000");
+	  incoming.style.opacity = "1";
+	  if (incoming.tagName === "VIDEO" && !incoming.getAttribute("poster") && incoming.dataset.poster) {
+		incoming.poster = incoming.dataset.poster;
+	  }
+
+	  // Pre-stage incoming as fixed fullscreen, parked off-screen on its entry edge (composited).
+	  fullscreenResource(incoming);
+	  incoming.style.transform = `translate3d(${enterFrom}, 0, 0)`;
+
+	  function resetIncomingToGrid() {
+		if (waitHandle) waitHandle.cancel();
+		incomingTile.removeAttribute("data-opening");
+		if (incomingIndicator) incomingIndicator.style.display = "none";
+		if (incoming.tagName === "VIDEO") {
+		  incoming.pause();
+		  incoming.currentTime = 0;
+		  resetVideoTimeDisplay(incoming);
+		  if (incoming.dataset.poster) incoming.poster = incoming.dataset.poster;
+		  incoming.preload = "none";
+		  incoming.load();
+		}
+		resetElement(incoming);
+		incoming.style.removeProperty("transform");
+	  }
+
+	  // Once the incoming visual is ready, animate both simultaneously with transforms only.
+	  function beginTransition(hasFrame) {
+		if (slideState !== controller) return; // superseded/cancelled during the wait
+		phase = "animating";
+		committedFrame = hasFrame && incoming.tagName === "VIDEO" && !incoming.error;
+
+		if (committedFrame) {
+		  incoming.muted = fullscreenMuted;
+		  incoming.removeAttribute("poster"); // a real frame is up; drop the poster
+		}
+
+		// Final resting transforms are set inline so the elements hold position after the anim ends.
+		incoming.style.transform = "translate3d(0, 0, 0)";
+
+		const opts = { duration: SLIDE_DURATION_MS, easing: "ease-in-out" };
+		if (typeof incoming.animate === "function") {
+		  inAnim = incoming.animate(
+			[{ transform: `translate3d(${enterFrom}, 0, 0)` }, { transform: "translate3d(0, 0, 0)" }],
+			opts
+		  );
+		  outAnim = outgoing.animate(
+			[{ transform: "translate3d(0, 0, 0)" }, { transform: `translate3d(${exitTo}, 0, 0)` }],
+			opts
+		  );
+		  outgoing.style.transform = `translate3d(${exitTo}, 0, 0)`; // hold at exit until settle clears it
+		  inAnim.onfinish = settle;
+		} else {
+		  // No WAAPI: jump to the final positions and settle on a timer.
+		  outgoing.style.transform = `translate3d(${exitTo}, 0, 0)`;
+		  setTimeout(settle, SLIDE_DURATION_MS);
+		}
+	  }
+
+	  function settle() {
+		if (settled) return;
+		settled = true;
+
+		// --- Atomically reset the outgoing resource back to the grid ---
+		outgoingTile.removeAttribute("id");
+		if (outgoingIndicator) outgoingIndicator.style.display = "none";
+		if (outgoing.tagName === "VIDEO") {
+		  outgoing.pause();
+		  outgoing.currentTime = 0;
+		  resetVideoTimeDisplay(outgoing);
+		  if (outgoing.dataset.poster) outgoing.poster = outgoing.dataset.poster;
+		  // Keep its buffer: the outgoing video is now the immediate reverse-navigation neighbor.
+		  // preloadNeighborTiles() will release it later only after it leaves the bounded window.
+		}
+		resetElement(outgoing);
+		outgoing.style.removeProperty("transform");
+
+		// --- Promote the incoming resource to fullscreen ---
+		incomingTile.removeAttribute("data-opening");
+		incomingTile.id = "fullscreen";
+		incoming.style.removeProperty("transform"); // already at translate3d(0); keep fullscreen geometry
+
+		if (incoming.tagName === "VIDEO") {
+		  if (incoming.error) {
+			setFullscreenError(incoming);
+		  } else if (incomingIndicator) {
+			// Spinner only if it should be playing but no frame is up yet.
+			incomingIndicator.style.display = committedFrame || incoming.paused ? "none" : "block";
+		  }
+		  updatePlayButtonUI(incoming);
+		  updateMuteButtonUI(incoming);
+		}
+
+		// A close return should now land on the current tile; controls/focus are untouched.
+		openerElement = incomingTile;
+		preloadNeighborTiles(incomingTile);
+
+		isAnimating = false;
+		slideState = null;
+
+		// A close request wins over any queued navigation.
+		if (closeAfter || pendingClose) {
+		  closeAfter = false;
+		  pendingClose = false;
+		  queuedNav = 0;
+		  escapeFullscreen(true);
+		  return;
+		}
+		runQueuedNavigation();
+	  }
+
+	  // Escape/close during a slide: unwind prep or finish the transition, then close cleanly.
+	  function requestClose() {
+		if (phase === "preparing") {
+		  resetIncomingToGrid();
+		  isAnimating = false;
+		  slideState = null;
+		  escapeFullscreen(true); // outgoing is still #fullscreen; close it normally
+		  return;
+		}
+		closeAfter = true;
+		if (inAnim) inAnim.cancel();
+		if (outAnim) outAnim.cancel();
+		settle(); // inline transforms already hold the final positions
+	  }
+
+	  if (incoming.tagName === "VIDEO") {
+		// Start on the restored poster immediately; frame readiness can update it asynchronously
+		// without delaying the keyboard response or exposing a black frame.
+		incoming.muted = true;
+		const playPromise = incoming.play();
+		if (playPromise && typeof playPromise.catch === "function") {
+		  playPromise.catch(() => {
+			if (slideState !== controller) return; // stale rejection from a cancelled slide
+			if (incoming.error) setFullscreenError(incoming);
+			if (waitHandle) waitHandle.finish(false); // no frame evidence; don't wait out the timeout
+		  });
+		}
+		beginTransition(false);
+		waitHandle = waitForFirstFrame(incoming, (hasFrame) => {
+		  if (
+			!hasFrame
+			|| incoming.error
+			|| (
+			  incomingTile.id !== "fullscreen"
+			  && incomingTile.getAttribute("data-opening") !== "true"
+			)
+		  ) {
+			return;
+		  }
+		  committedFrame = true;
+		  incoming.muted = fullscreenMuted;
+		  incoming.removeAttribute("poster");
+		  if (incomingTile.id === "fullscreen" && incomingIndicator) {
+			incomingIndicator.style.display = "none";
+		  }
+		  updateMuteButtonUI(incoming);
+		});
+	  } else {
+		beginTransition(false);
+	  }
+	}
+
+	function prevResource() {
+	  navigate(-1);
+	}
+
+	function nextResource() {
+	  navigate(1);
 	}
   
+	// True when focus is on a control that should handle its own key activation
+	// (e.g. Space on a focused button), so the global shortcut doesn't also fire.
+	function isInteractiveElement(el) {
+	  return !!(el && el.closest && el.closest("button, a[href], input, select, textarea, [role='button']"));
+	}
+
 	document.onkeydown = (event) => {
+	  if (event.key == "Escape" && pendingOpen) {
+		pendingOpen.cancel();
+		return;
+	  }
+
+	  if (pendingOpen) {
+		if (event.key == "ArrowLeft" || event.key == "ArrowUp") {
+		  queuedNav -= 1;
+		  event.preventDefault();
+		} else if (event.key == "ArrowRight" || event.key == "ArrowDown") {
+		  queuedNav += 1;
+		  event.preventDefault();
+		}
+		return;
+	  }
+
 	  const fullscreen = document.getElementById("fullscreen");
   
-	  if (!fullscreen || isAnimating) return;
-  
+	  if (!fullscreen) return;
+
+	  // Checked before any gate so a close request always wins, even mid-transition.
 	  if (event.key == "Escape") {
 		escapeFullscreen(true);
-	  } else if (event.key == "ArrowLeft" || event.key == "ArrowUp") {
+		return;
+	  }
+
+	  // Arrows are not gated on isAnimating: navigate() coalesces rapid presses instead of dropping them.
+	  if (event.key == "ArrowLeft" || event.key == "ArrowUp") {
 		prevResource();
 	  } else if (event.key == "ArrowRight" || event.key == "ArrowDown") {
 		nextResource();
+	  } else if (event.key === "Tab") {
+		// Trap Tab/Shift+Tab within the visible controls so focus can't escape to the grid behind.
+		const buttons = document.getElementById("fullscreen-controls").querySelectorAll("button");
+		const first = buttons[0];
+		const last = buttons[buttons.length - 1];
+		const withinControls = first && document.activeElement && document.getElementById("fullscreen-controls").contains(document.activeElement);
+
+		if (event.shiftKey) {
+		  if (!withinControls || document.activeElement === first) {
+			event.preventDefault();
+			last.focus();
+		  }
+		} else if (!withinControls || document.activeElement === last) {
+		  event.preventDefault();
+		  first.focus();
+		}
 	  } else if (event.key == " ") {
-		// Space bar toggles play/pause
+		if (isAnimating) return; // don't toggle playback mid-transition
+		// Leave Space to the focused control (e.g. the close button) instead of also toggling video.
+		if (isInteractiveElement(document.activeElement)) return;
+
 		const video = fullscreen.querySelector("video");
 		if (video) {
-		  video.paused ? video.play() : video.pause();
+		  toggleVideoPlayback(video);
 		  event.preventDefault();
 		}
 	  }
@@ -371,7 +952,7 @@ function getThumbnailUrl(videoUrl: string): string {
 	  const screenAspectRatio = screenHeight / screenWidth;
 	  const isVertical = resourceAspectRatio > screenAspectRatio;
   
-	  freezeElement(element);
+	  freezeElement(element, rect); // reuse the rect already read above instead of re-measuring
   
 	  // now transition the element to be fullscreen
 	  element.getBoundingClientRect(); // required for animation to work
@@ -398,38 +979,51 @@ function getThumbnailUrl(videoUrl: string): string {
 		fullscreenResource(element);
   
 		isAnimating = false;
+		trySettleClose();
 	  }, 200);
 	}
   
-	function zoomOut(element) {
+	function zoomOut(element, onDone) {
 	  // disable certain interactions while animating
 	  isAnimating = true;
   
-	  // align screen with the resource being closed
+	  const gridTile = element.parentElement.parentElement;
+
+	  // Batch reads before writes: measure both up front so no write sits between reads.
+	  const elementRect = element.getBoundingClientRect();
+	  let tileRect = gridTile.getBoundingClientRect();
+	  const isOffscreen = tileRect.top < 0 || tileRect.bottom > window.innerHeight;
+
+	  // align screen with the resource being closed, but only if it's not already visible
 	  enableScrolling();
-	  element.parentElement.parentElement.scrollIntoView({ block: "center" });
+	  if (isOffscreen) {
+		gridTile.scrollIntoView({ block: "center" });
+		tileRect = gridTile.getBoundingClientRect(); // re-read: scrolling actually moved layout
+	  }
 	  disableScrolling();
   
-	  freezeElement(element);
+	  freezeElement(element, elementRect);
   
 	  // resize the image back to the grid size
-	  const rect = element.parentElement.parentElement.getBoundingClientRect();
 	  element.style.transition = "all 200ms ease-in-out";
-	  element.style.width = rect.width + "px";
-	  element.style.height = rect.height + "px";
-	  element.style.top = rect.top + "px";
-	  element.style.left = rect.left + "px";
+	  element.style.width = tileRect.width + "px";
+	  element.style.height = tileRect.height + "px";
+	  element.style.top = tileRect.top + "px";
+	  element.style.left = tileRect.left + "px";
   
 	  // reset properties to allow dynamic scaling once animation is finished
 	  setTimeout(() => {
 		resetElement(element);
 		enableScrolling();
 		isAnimating = false;
+		if (onDone) onDone();
+		// Clears a stale flag if a close landed while this close was already in flight.
+		trySettleClose();
 	  }, 200);
 	}
   
-	function freezeElement(element) {
-	  const rect = element.getBoundingClientRect();
+	function freezeElement(element, rect) {
+	  rect = rect || element.getBoundingClientRect();
 	  element.style.width = rect.width + "px";
 	  element.style.height = rect.height + "px";
 	  element.style.top = rect.top + "px";
@@ -444,7 +1038,11 @@ function getThumbnailUrl(videoUrl: string): string {
 	  element.style.inset = 0;
 	  element.style.zIndex = 2;
 	  element.style.position = "fixed";
-	  element.scrollIntoView({ block: "center" });
+
+	  const rect = element.getBoundingClientRect();
+	  if (rect.top < 0 || rect.bottom > window.innerHeight) {
+		element.scrollIntoView({ block: "center" });
+	  }
 	}
   
 	function resetElement(element) {
@@ -478,9 +1076,11 @@ function getThumbnailUrl(videoUrl: string): string {
 	function enableFullscreenControls() {
 	  const controls = document.getElementById("fullscreen-controls");
 	  controls.style.opacity = 1;
+	  controls.setAttribute("aria-hidden", "false");
   
 	  controls.querySelectorAll("button").forEach((button) => {
 		button.style.pointerEvents = "auto";
+		button.removeAttribute("tabindex");
 	  });
   
 	  const backdrop = document.getElementById("fullscreen-backdrop");
@@ -491,9 +1091,12 @@ function getThumbnailUrl(videoUrl: string): string {
 	function disableFullscreenControls() {
 	  const controls = document.getElementById("fullscreen-controls");
 	  controls.style.opacity = 0;
+	  controls.setAttribute("aria-hidden", "true");
   
+	  // tabindex="-1" keeps Tab from reaching these while hidden, backing the focus trap.
 	  controls.querySelectorAll("button").forEach((button) => {
 		button.style.pointerEvents = "none";
+		button.setAttribute("tabindex", "-1");
 	  });
   
 	  const backdrop = document.getElementById("fullscreen-backdrop");
@@ -515,7 +1118,7 @@ function getThumbnailUrl(videoUrl: string): string {
 	  startY = e.changedTouches[0].screenY;
 	}, { passive: true });
   
-	document.addEventListener("touchmove", (e) => {
+	document.addEventListener("touchmove", () => {
 	  isScrolling = true;
 	}, { passive: true });
   
@@ -525,7 +1128,8 @@ function getThumbnailUrl(videoUrl: string): string {
   
 	  const fullscreen = document.getElementById("fullscreen");
   
-	  if (!fullscreen || isAnimating) {
+	  // Not gated on isAnimating: swipes coalesce (navigate) or close (escape) instead of dropping.
+	  if (!fullscreen) {
 		return;
 	  }
   
@@ -543,57 +1147,205 @@ function getThumbnailUrl(videoUrl: string): string {
 	  if (endX < startX) nextResource();
 	  else if (endX > startX) prevResource();
 	});
+
+	// Grid tile activation: keyboard (Enter/Space) and tap, mirroring onclick.
+	// isScrolling suppresses opening a tile the user was actually scrolling past.
+	document.querySelectorAll("[data-position]").forEach((tile) => {
+	  if (!(tile instanceof HTMLElement)) return;
+
+	  tile.addEventListener("keydown", (event) => {
+		if (event.key === "Enter" || event.key === " ") {
+		  event.preventDefault();
+		  setFullscreen(tile);
+		}
+	  });
+
+	  tile.addEventListener("touchend", () => {
+		if (!isScrolling) {
+		  setFullscreen(tile);
+		}
+	  });
+
+	  // The video itself is pointer-events-none in the grid, so hover must live on the tile.
+	  tile.addEventListener("mouseenter", () => {
+		const video = tile.querySelector("video");
+		if (video) previewVideo(video);
+	  });
+
+	  tile.addEventListener("mouseleave", () => {
+		const video = tile.querySelector("video");
+		if (video) resetVideo(video);
+	  });
+	});
   </script>
 
 <!-- handle updating the current time of the video playing when fullscreen -->
-<script>
+<!-- is:inline: keeps these functions global so inline on* attributes can call them -->
+<script is:inline>
   const videos = document.querySelectorAll("video");
-  const intervals = {};
+
+  // True when this video is the one currently shown in the fullscreen viewer.
+  function isFullscreenVideo(video) {
+    const tile = video.parentElement && video.parentElement.parentElement;
+    return !!tile && tile.id === "fullscreen";
+  }
+
+  function updatePlayButtonUI(video) {
+    const btn = document.getElementById("fullscreen-play-btn");
+    if (!btn) return;
+    const playing = !video.paused;
+    const pauseIcon = btn.querySelector('[data-icon="pause"]');
+    const playIcon = btn.querySelector('[data-icon="play"]');
+    if (pauseIcon) pauseIcon.classList.toggle("hidden", !playing);
+    if (playIcon) playIcon.classList.toggle("hidden", playing);
+    btn.setAttribute("aria-label", playing ? "Pause video" : "Play video");
+  }
+
+  function updateMuteButtonUI(video) {
+    const btn = document.getElementById("fullscreen-mute-btn");
+    if (!btn) return;
+    const muted = video.muted;
+    const volumeIcon = btn.querySelector('[data-icon="volume"]');
+    const mutedIcon = btn.querySelector('[data-icon="muted"]');
+    if (volumeIcon) volumeIcon.classList.toggle("hidden", muted);
+    if (mutedIcon) mutedIcon.classList.toggle("hidden", !muted);
+    btn.setAttribute("aria-label", muted ? "Unmute video" : "Mute video");
+  }
+
+  function setFullscreenLoading(video, visible) {
+    const tile = video.closest("[data-position]");
+    const indicator = tile && tile.querySelector('[role="status"]');
+    if (!indicator) return;
+    const spinner = indicator.querySelector("[data-video-spinner]");
+    const error = indicator.querySelector("[data-video-error]");
+    const statusText = indicator.querySelector("[data-video-status-text]");
+    spinner?.classList.toggle("hidden", !visible);
+    if (visible) error?.classList.add("hidden");
+    if (statusText) statusText.textContent = visible ? "Loading video..." : "";
+    indicator.style.display = visible ? "block" : "none";
+  }
+
+  function setFullscreenError(video) {
+    const tile = video.closest("[data-position]");
+    const indicator = tile && tile.querySelector('[role="status"]');
+    if (!indicator) return;
+    indicator.querySelector("[data-video-spinner]")?.classList.add("hidden");
+    indicator.querySelector("[data-video-error]")?.classList.remove("hidden");
+    const statusText = indicator.querySelector("[data-video-status-text]");
+    if (statusText) statusText.textContent = "Video unavailable";
+    indicator.style.display = "block";
+  }
+
+  function resetVideoTimeDisplay(video) {
+    const span = document.getElementById(`current-time-${video.id}`);
+    if (span) span.textContent = "0:00 / ";
+  }
+
+  function commitFullscreenFrame(video) {
+    if (
+      !isFullscreenVideo(video)
+      || video.paused
+      || video.readyState < 2
+    ) {
+      return;
+    }
+    video.muted = fullscreenMuted;
+    video.removeAttribute("poster");
+    setFullscreenLoading(video, false);
+    updateMuteButtonUI(video);
+  }
 
   videos.forEach((video) => {
+    // Covers every playback path (autoplay, click, Space, pause) via native events.
+    video.addEventListener("play", () => {
+      if (isFullscreenVideo(video)) updatePlayButtonUI(video);
+    });
+    video.addEventListener("pause", () => {
+      if (isFullscreenVideo(video)) {
+        updatePlayButtonUI(video);
+        setFullscreenLoading(video, false);
+      }
+    });
+    video.addEventListener("volumechange", () => {
+      if (isFullscreenVideo(video)) updateMuteButtonUI(video);
+    });
+    // Deferred-poster fallback: if a frame renders after the open gate already settled
+    // (e.g. autoplay was rejected, user pressed play once buffered), drop the stale poster.
+    // Still gated on readyState so this can never strip the poster ahead of a real frame.
+    video.addEventListener("playing", () => {
+      commitFullscreenFrame(video);
+    });
+    video.addEventListener("waiting", () => {
+      if (isFullscreenVideo(video) && !video.paused) setFullscreenLoading(video, true);
+    });
+    video.addEventListener("stalled", () => {
+      if (isFullscreenVideo(video) && !video.paused) setFullscreenLoading(video, true);
+    });
+    video.addEventListener("error", () => {
+      const tile = video.closest("[data-position]");
+      if (isFullscreenVideo(video) || tile?.getAttribute("data-opening") === "true") {
+        setFullscreenError(video);
+        updatePlayButtonUI(video);
+      }
+    });
+
     const videoId = video.id;
     const currentTimeSpan = document.getElementById(`current-time-${videoId}`);
     if (!currentTimeSpan) return;
 
-    video.addEventListener("play", () => {
-      intervals[videoId] = setInterval(() => {
-        const minutes = Math.floor(video.currentTime / 60);
-        const seconds = Math.floor(video.currentTime % 60);
-        currentTimeSpan.innerHTML = `${minutes}:${seconds.toString().padStart(2, "0")} / `;
-      }, 500);
-    });
-
-    video.addEventListener("pause", () => {
-      clearInterval(intervals[videoId]);
+    // Native event: fires only while actually playing, no per-video timer needed.
+    video.addEventListener("timeupdate", () => {
+      commitFullscreenFrame(video);
+      const minutes = Math.floor(video.currentTime / 60);
+      const seconds = Math.floor(video.currentTime % 60);
+      currentTimeSpan.innerHTML = `${minutes}:${seconds.toString().padStart(2, "0")} / `;
     });
     
-    // Fade in video when loaded or playing
-    video.addEventListener("canplay", () => {
-      video.style.opacity = "1";
-    });
-    
-    // If already loaded
-    if (video.readyState >= 3) {
-      video.style.opacity = "1";
-    }
   });
   
-  // Preview video functionality
+  // Muted so hover (not a real gesture) can autoplay; metadata-only preload for a light fetch.
   function previewVideo(video) {
-    // Only load video when hovering
-    if (video.preload === "none") {
-      video.preload = "auto";
+    if (document.getElementById("fullscreen") || pendingOpen) return;
+
+    video.muted = true;
+    if (video.preload !== "auto") {
+      video.preload = "metadata";
     }
-    
-    if (video.paused && !document.getElementById("fullscreen")) {
-      video.play();
+
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {}); // ignore expected rejections (e.g. rapid mouseout)
     }
   }
   
   function resetVideo(video) {
-    if (!document.getElementById("fullscreen")) {
+    if (document.getElementById("fullscreen") || pendingOpen) return;
+
+    video.pause();
+    video.currentTime = 0;
+    resetVideoTimeDisplay(video);
+    video.muted = false;
+    video.preload = "none";
+    // preload alone won't release a buffered request; load() actually aborts it.
+    video.load();
+  }
+
+  // Shared toggle so every call site catches the play() promise.
+  function toggleVideoPlayback(video) {
+    if (!video) return;
+    if (video.paused) {
+      if (isFullscreenVideo(video)) setFullscreenLoading(video, true);
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {
+          if (isFullscreenVideo(video)) {
+            if (video.error) setFullscreenError(video);
+            else setFullscreenLoading(video, false);
+          }
+        });
+      }
+    } else {
       video.pause();
-      video.currentTime = 0;
     }
   }
 </script>

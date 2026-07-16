@@ -165,7 +165,15 @@ const showsData = [
       { name: "Foreigner", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: ["Foreigner"], allArtists: ["Foreigner", "Styx", "Kansas"] }
     ]
   }
-];
+// Some records' literal `photographed` value drifts from `photographedArtists`;
+// derive it here instead of trusting the stored field.
+].map(yearData => ({
+  ...yearData,
+  shows: yearData.shows.map(show => ({
+    ...show,
+    photographed: show.photographedArtists.length > 0,
+  })),
+}));
 
 // Calculate statistics
 const allShows = showsData.flatMap(yearData => yearData.shows);
@@ -464,7 +472,8 @@ const attendedShows = allShows.filter(show => !show.photographed).length;
   </style>
 
   <script>
-    const filterSelect = document.getElementById('show-filter') as HTMLSelectElement;
+    const filterSelectEl = document.getElementById('show-filter');
+    const filterSelect = filterSelectEl instanceof HTMLSelectElement ? filterSelectEl : null;
     const showItems = document.querySelectorAll('.show-item');
     const alsoPerformingSections = document.querySelectorAll('.also-performing-section');
     const noPhotographedMessages = document.querySelectorAll('.no-photographed-shows');

@@ -92,3 +92,10 @@ export async function buildPrintImageUrl(
 export const GRID_WIDTH = 900;
 export const ENLARGED_WIDTH = 1600;
 export const THUMB_WIDTH = 400;
+
+/**
+ * Fixed responsive width ladder for grid tiles — never add a width above
+ * GRID_WIDTH or let the client pick one; each is a separately signed
+ * transformation and Strict Transformations only protects widths signed here.
+ */
+export const GRID_WIDTHS = [320, 480, 640, 900] as const;

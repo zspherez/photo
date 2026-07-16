@@ -1,8 +1,6 @@
 ---
 import { v2 as cloudinary } from "cloudinary";
 import { CldImage } from 'astro-cloudinary';
-import left from '../icons/chevron-left-solid.svg?raw'
-import right from '../icons/chevron-right-solid.svg?raw'
 import Icon from '../components/Icon.astro'
 
 export interface Props {
@@ -51,62 +49,118 @@ for (let i = 0; i < maxLen; i++) {
     if (i < list.length) filteredResources.push(list[i]);
   }
 }
+
+// Fixed ladder (capped at 1920) — the native-width-derived ladder was producing 12-17 entries
+// per image, some over 6000w that no viewport here will ever request.
+const BREAKPOINTS = [192, 288, 384, 480, 640, 960, 1280, 1920];
+
+const resourceRatio = (resource: CloudinaryResource) =>
+  resource.aspect_ratio || resource.width / resource.height;
+
+// Bucketed by aspect ratio because the justified/flex-grow grid gives landscape tiles more row
+// width than portrait/square ones — a flat 33vw either overfetches or underfetches depending on
+// shape. These are generous upper bounds, not exact measurements (layout is unknown at build time).
+function getSizes(resource: CloudinaryResource): string {
+  const ratio = resourceRatio(resource);
+  let tabletVw = 45;
+  let desktopVw = 30;
+  let capPx = 460;
+
+  if (ratio >= 1.35) {
+    // landscape: larger flex-basis, fewer tiles share a row
+    tabletVw = 60;
+    desktopVw = 42;
+    capPx = 620;
+  } else if (ratio <= 0.8) {
+    // portrait: smaller flex-basis, more tiles share a row
+    tabletVw = 34;
+    desktopVw = 22;
+    capPx = 340;
+  }
+
+  return `(max-width: 639px) calc(50vw - 6px), (max-width: 1023px) ${tabletVw}vw, (max-width: 1919px) ${desktopVw}vw, ${capPx}px`;
+}
+
+// Covers the profiled first two rows (desktop LCP was index 6, mobile was index 1), not just
+// index 0. Of that set, at most two tiles (strongest landscape + strongest portrait) get
+// fetchpriority="high" so both layouts get a priority signal without flooding the network.
+const EAGER_COUNT = Math.min(8, filteredResources.length);
+const eagerCandidates = filteredResources.slice(0, EAGER_COUNT);
+let landscapeIndex = -1;
+let portraitIndex = -1;
+eagerCandidates.forEach((resource, i) => {
+  if (landscapeIndex === -1 || resourceRatio(resource) > resourceRatio(eagerCandidates[landscapeIndex])) {
+    landscapeIndex = i;
+  }
+  if (portraitIndex === -1 || resourceRatio(resource) < resourceRatio(eagerCandidates[portraitIndex])) {
+    portraitIndex = i;
+  }
+});
 ---
 
-<div class="flex flex-wrap m-0.5">
+<div class="flex flex-wrap m-0.5" data-gallery-count={filteredResources.length}>
 
-  {filteredResources.map((CloudinaryResource, index) => (
-    <div
-      data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
-      data-public-id={CloudinaryResource.public_id}
-      data-width={CloudinaryResource.width}
-      data-height={CloudinaryResource.height}
-      data-alt={CloudinaryResource.context?.alt || ""}
-      onclick="setFullscreen(this)"
-      ontouchend="if (!isScrolling) setFullscreen(this)"
-      class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto max-w-[calc(50%-4px)] sm:max-w-none"
-      style={`flex-grow: ${CloudinaryResource.width * 350 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 350 / CloudinaryResource.height}px;`}
-    >
+  {filteredResources.map((CloudinaryResource, index) => {
+    const isEager = index < EAGER_COUNT;
+    const isPriority = index === landscapeIndex || index === portraitIndex;
 
-      <!-- placeholder for proper grid sizing -->
-      <div class="block" style={`padding-bottom: ${CloudinaryResource.height / CloudinaryResource.width * 100}%`}></div>
+    return (
+      <div
+        data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
+        data-public-id={CloudinaryResource.public_id}
+        data-width={CloudinaryResource.width}
+        data-height={CloudinaryResource.height}
+        data-alt={CloudinaryResource.context?.alt || ""}
+        tabindex="0"
+        role="button"
+        aria-label={`View photo ${index + 1} of ${filteredResources.length}`}
+        onclick="setFullscreen(this)"
+        class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto max-w-[calc(50%-4px)] sm:max-w-none"
+        style={`flex-grow: ${CloudinaryResource.width * 350 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 350 / CloudinaryResource.height}px;`}
+      >
 
-      <CldImage
-        src={CloudinaryResource.public_id}
-        width={CloudinaryResource.width}
-        height={CloudinaryResource.height}
-        alt={CloudinaryResource.context?.alt || ""}
-        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-        class="resource absolute align-bottom top-0 w-full h-full object-cover opacity-0 transition-opacity ease-in duration-1000 fullscreen:pointer-events-none"
-        crop={{
-          type: 'fill',
-          source: true
-        }}
-        loading={`${index <= 10 ? "eager" : "lazy"}`}
-      />
-    </div>
-  ))}
+        <!-- placeholder for proper grid sizing -->
+        <div class="block" style={`padding-bottom: ${CloudinaryResource.height / CloudinaryResource.width * 100}%`}></div>
+
+        <CldImage
+          src={CloudinaryResource.public_id}
+          width={CloudinaryResource.width}
+          height={CloudinaryResource.height}
+          alt={CloudinaryResource.context?.alt || ""}
+          sizes={getSizes(CloudinaryResource)}
+          breakpoints={BREAKPOINTS}
+          class={`resource absolute align-bottom top-0 w-full h-full object-cover fullscreen:pointer-events-none ${isEager ? "" : "opacity-0 transition-opacity ease-in duration-1000"}`}
+          crop={{
+            type: 'fill',
+            source: true
+          }}
+          loading={isEager ? "eager" : "lazy"}
+          priority={isPriority}
+        />
+      </div>
+    );
+  })}
 
 </div>
 
 <div id="fullscreen-backdrop" class="fixed scale-200 inset-0 z-[1] w-screen h-screen bg-black pointer-events-none opacity-0 transition-opacity duration-200"></div>
 
-<div id="fullscreen-controls" class="fixed top-0 z-[3] w-screen h-screen pointer-events-none opacity-0 transition-opacity duration-200">
-  <button type="button" onclick="prevResource()" class="fixed left-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 md:w-[25vw]">
+<div id="fullscreen-controls" role="dialog" aria-modal="true" aria-label="Photo viewer" aria-hidden="true" class="fixed top-0 z-[3] w-screen h-screen pointer-events-none opacity-0 transition-opacity duration-200">
+  <button type="button" onclick="prevResource()" tabindex="-1" class="fixed left-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 focus-visible:opacity-100 md:w-[25vw]">
     <div class="absolute left-0 ml-4 rounded-full bg-neutral-700 p-2 md:ml-8 md:p-4">
        <Icon name="left" />
       <span class="sr-only">previous image</span>
     </div>
   </button>
 
-  <button type="button" onclick="nextResource()" class="fixed right-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 md:w-[25vw]">
+  <button type="button" onclick="nextResource()" tabindex="-1" class="fixed right-0 mt-[25vh] flex h-[50vh] w-[15vw] items-center opacity-0 hover:opacity-100 focus-visible:opacity-100 md:w-[25vw]">
     <div class="absolute right-0 mr-4 rounded-full bg-neutral-700 p-2 md:mr-8 md:p-4">
       <Icon name="right" />
       <span class="sr-only">next image</span>
     </div>
   </button>
 
-  <button type="button" onclick="escapeFullscreen(true)" class="fixed ml-2 mt-2 rounded-full bg-neutral-700/50 p-3 hover:bg-neutral-700">
+  <button id="fullscreen-close-btn" type="button" onclick="escapeFullscreen()" tabindex="-1" class="fixed ml-2 mt-2 rounded-full bg-neutral-700/50 p-3 hover:bg-neutral-700">
     <Icon name="x" />
     <span class="sr-only">exit image</span>
   </button>
@@ -114,11 +168,30 @@ for (let i = 0; i < maxLen; i++) {
 
 <script is:inline>
   let isAnimating = false;
+  // Set when Escape/close-button fires mid-animation; resolved once the animation settles.
+  let closeRequested = false;
+  // Latest-direction-wins queue for Arrow presses that land mid-transition — coalesces rapid
+  // key-repeat into a single pending step instead of dropping input or stacking an unbounded queue.
+  let queuedDirection = null;
+  // A high-quality image that resolved while a transition was in flight; applied once it settles
+  // so a cache-fast HQ load can never pop/race mid-animation.
+  const pendingHq = new Map();
+  // Tracks the tile that opened the lightbox, for focus restoration on close.
+  let openerElement = null;
+  const galleryWrapper = document.querySelector("[data-gallery-count]");
+  // Lets prev/next safely no-op for 0/1-image galleries.
+  const galleryCount = Number(galleryWrapper?.dataset.galleryCount || 0);
+  // Monotonic counter so a stale high-quality image load can't overwrite a tile it no longer belongs to.
+  let hqRequestId = 0;
 
-  function setFullscreen(element, animation) {
-    if (element.id == "fullscreen") {
+  function setFullscreen(element) {
+    // Blocks a reopen/re-entry while a previous open/close animation is still settling — without
+    // this, a rapid reopen during the 200ms close window could be torn down by the old timer.
+    if (isAnimating || element.id == "fullscreen") {
       return;
     }
+
+    openerElement = element;
 
     // Start loading high-quality image immediately
     const resource = element.querySelector(".resource");
@@ -127,20 +200,61 @@ for (let i = 0; i < maxLen; i++) {
     disableScrolling();
     enableFullscreenControls();
     element.id = "fullscreen";
-    
-    if (animation) {
-      isAnimating = true;
+    document.getElementById("fullscreen-close-btn")?.focus();
 
-      resource.classList.add(animation);
-      fullscreenResource(resource)
+    zoomIn(resource);
+  }
 
-      setTimeout(() => {
-        resource.classList.remove(animation);
-        isAnimating = false;
-      }, 200);
-    } else {
-      zoomIn(resource);
+  // Common settle point for every animation (open zoom, close zoom, slide): flips isAnimating
+  // back off, applies any HQ load that was deferred while busy, then runs whatever was queued.
+  function settleAnimation() {
+    isAnimating = false;
+
+    resolveQueuedClose();
+
+    if (queuedDirection && document.getElementById("fullscreen")) {
+      // The current tile is transient, so discard its deferred HQ swap and give the browser one
+      // paint between teardown and the next transition instead of stacking both in one frame.
+      pendingHq.clear();
+      scheduleQueuedSlide();
+      return;
     }
+    if (queuedDirection) queuedDirection = null;
+
+    if (pendingHq.size) {
+      const fullscreenImage = document.getElementById("fullscreen")?.querySelector(".resource");
+      const pending = fullscreenImage ? pendingHq.get(fullscreenImage) : null;
+      pendingHq.clear();
+      if (!pending) return;
+      const { imgElement, requestId, apply } = pending;
+      if (
+        imgElement.dataset.hqRequestId === String(requestId)
+        && imgElement.closest("[data-position]")?.id === "fullscreen"
+      ) {
+        apply();
+      }
+    }
+  }
+
+  function scheduleQueuedSlide() {
+    const direction = queuedDirection;
+    queuedDirection = null;
+    isAnimating = true;
+
+    requestAnimationFrame(() => {
+      isAnimating = false;
+      if (closeRequested) {
+        queuedDirection = null;
+        resolveQueuedClose();
+        return;
+      }
+      if (!document.getElementById("fullscreen")) {
+        queuedDirection = null;
+        return;
+      }
+      if (direction === "prev") prevResource();
+      else nextResource();
+    });
   }
 
   function loadHighQualityImage(element, imgElement) {
@@ -148,9 +262,19 @@ for (let i = 0; i < maxLen; i++) {
     
     if (!publicId || !imgElement) return;
 
-    // Extract cloud name from existing image src
+    // Captured once so the original responsive image can always be restored later.
+    if (!imgElement.dataset.originalSrc) {
+      imgElement.dataset.originalSrc = imgElement.getAttribute('src') || '';
+      imgElement.dataset.originalSrcset = imgElement.getAttribute('srcset') || '';
+    }
+
+    // Tags this load so a later, stale resolution can be told apart from the current one.
+    const requestId = ++hqRequestId;
+    imgElement.dataset.hqRequestId = String(requestId);
+
+    // Extract cloud name from the original src (stable across repeated opens of this tile).
     let cloudName = null;
-    const existingSrc = imgElement.src || imgElement.getAttribute('src');
+    const existingSrc = imgElement.dataset.originalSrc || imgElement.src || imgElement.getAttribute('src');
     if (existingSrc) {
       const match = existingSrc.match(/res\.cloudinary\.com\/([^\/]+)\//);
       if (match) {
@@ -164,31 +288,42 @@ for (let i = 0; i < maxLen; i++) {
       return;
     }
 
-    // Use screen dimensions for optimal fullscreen quality
-    const screenWidth = window.innerWidth;
-    const screenHeight = window.innerHeight;
-    const devicePixelRatio = window.devicePixelRatio || 1;
-    
-    // Calculate target dimensions (account for device pixel ratio)
-    const targetWidth = Math.ceil(screenWidth * devicePixelRatio);
-    const targetHeight = Math.ceil(screenHeight * devicePixelRatio);
+    // Cap DPR and target dimensions so a 5K/6K or DPR3 display can't request an unbounded,
+    // multi-megapixel fullscreen asset.
+    const cappedDpr = Math.min(window.devicePixelRatio || 1, 2);
+    const targetWidth = Math.min(Math.ceil(window.innerWidth * cappedDpr), 2560);
+    const targetHeight = Math.min(Math.ceil(window.innerHeight * cappedDpr), 1600);
     
     // Create high-quality Cloudinary URL optimized for fullscreen viewing
-    const highQualityUrl = `https://res.cloudinary.com/${cloudName}/image/upload/c_fit,w_${targetWidth},h_${targetHeight},q_auto:good,f_auto/${publicId}`;
+    // Encode each path segment separately so spaces/special chars in the public ID are safe
+    // without escaping the folder-separating slashes themselves.
+    const encodedPublicId = publicId.split('/').map(encodeURIComponent).join('/');
+    const highQualityUrl = `https://res.cloudinary.com/${cloudName}/image/upload/c_fit,w_${targetWidth},h_${targetHeight},q_auto:good,f_auto/${encodedPublicId}`;
     
     // Preload the high-quality image
     const highQualityImg = new Image();
     highQualityImg.onload = () => {
-      // Update the existing image with high-quality version
-      if (imgElement.tagName === 'IMG') {
+      // Stale guard: a later request or a fully-closed/reset tile invalidates this load
+      // (resetElement() deletes hqRequestId on every close/slide-out).
+      if (imgElement.tagName !== 'IMG' || imgElement.dataset.hqRequestId !== String(requestId)) return;
+
+      const apply = () => {
         imgElement.src = highQualityUrl;
-        if (imgElement.srcset) {
-          imgElement.srcset = `${highQualityUrl} 1x`;
-        }
+        imgElement.srcset = `${highQualityUrl} 1x`;
+      };
+
+      // A transition (open/close/slide) is in flight — defer the swap so a cache-fast resolve
+      // can't pop/race mid-animation; settleAnimation() applies it once things settle.
+      if (isAnimating) {
+        pendingHq.set(imgElement, { imgElement, requestId, apply });
+      } else if (element.id === "fullscreen") {
+        apply();
       }
     };
     
     highQualityImg.onerror = () => {
+      // src/srcset are only ever swapped on success (above), so a failed high-quality fetch
+      // never breaks the thumbnail — it just keeps showing the original responsive image.
       console.warn('Failed to load high-quality image:', highQualityUrl);
     };
     
@@ -196,87 +331,191 @@ for (let i = 0; i < maxLen; i++) {
     highQualityImg.src = highQualityUrl;
   }
 
-  function escapeFullscreen(close) {
+  function escapeFullscreen() {
     const fullscreen = document.getElementById("fullscreen");
 
-    if (!fullscreen || isAnimating) return;
+    if (!fullscreen) return;
 
-    if (close) {
-      zoomOut(fullscreen.querySelector(".resource"));
-      disableFullscreenControls();
-    } else {
-      resetElement(fullscreen.querySelector(".resource"))
+    if (isAnimating) {
+      // Don't drop the request — run it once the in-flight open/slide animation settles.
+      closeRequested = true;
+      return;
     }
-    
+
+    zoomOut(fullscreen.querySelector(".resource"));
+    disableFullscreenControls();
     fullscreen.removeAttribute("id");
 
     document.getElementById("fullscreen-controls").querySelectorAll("button").forEach((button) => button.blur());
   }
 
-  function slideTo(element, animationOut, animationIn) {
+  // Called wherever an animation settles (isAnimating -> false) so a close requested mid-animation
+  // still executes; a no-op if nothing was queued or fullscreen already closed by other means.
+  function resolveQueuedClose() {
+    if (!closeRequested) return;
+    closeRequested = false;
+    if (document.getElementById("fullscreen")) {
+      escapeFullscreen();
+    }
+  }
+
+  // Slides the outgoing (currently fullscreen) resource out while the incoming one slides in,
+  // simultaneously, using a compositor-only transform (no `left`, no serial steps). Opacity is
+  // never animated — the incoming resource stays fully offscreen until it moves, so there's no
+  // overlap to crossfade, and a fixed opacity avoids the one-frame gap a fill:"forwards" opacity
+  // effect can leave behind when it's cancelled at settle.
+  function slideTo(targetElement, direction) {
     const fullscreen = document.getElementById("fullscreen");
 
-    if (!fullscreen || isAnimating) return;
-
-    const resource = fullscreen.querySelector(".resource");
-    resource.classList.add(animationOut);
+    // Guards a missing/self target, e.g. a 0/1-image gallery with no valid neighbor.
+    if (!fullscreen || isAnimating || !targetElement || targetElement === fullscreen) return;
 
     isAnimating = true;
 
-    setTimeout(() => {
-      resource.classList.remove(animationOut);
+    const outgoing = fullscreen.querySelector(".resource");
+    const incoming = targetElement.querySelector(".resource");
 
-      isAnimating = false;
+    // Kick off the HQ fetch for the incoming resource now; the actual src swap is deferred (see
+    // loadHighQualityImage) until this transition settles, so it can't pop mid-slide.
+    loadHighQualityImage(targetElement, incoming);
 
-      escapeFullscreen(false);
-      setFullscreen(element, animationIn);
-    }, 200);
+    const enterX = direction === "next" ? "100%" : "-100%";
+    const exitX = direction === "next" ? "-100%" : "100%";
+
+    // Pre-stage incoming alongside the still-visible outgoing resource, fully off-screen.
+    // Both get transition: none so only the WAAPI animate() calls below drive movement, and both
+    // stay pinned at opacity 1 (never animated/toggled) so there's nothing to leave stale.
+    outgoing.style.transition = "none";
+    outgoing.style.opacity = "1";
+    incoming.style.transition = "none";
+    fullscreenResource(incoming);
+    incoming.style.opacity = "1";
+    incoming.style.transform = `translate3d(${enterX}, 0, 0)`;
+
+    // Adjacent grid thumbnails are already loaded; start immediately instead of making keyboard
+    // response wait on decode bookkeeping. The outgoing image remains visible throughout.
+    const outAnim = outgoing.animate(
+      [
+        { transform: "translate3d(0, 0, 0)" },
+        { transform: `translate3d(${exitX}, 0, 0)` },
+      ],
+      { duration: 200, easing: "ease-in-out", fill: "forwards" }
+    );
+    const inAnim = incoming.animate(
+      [
+        { transform: `translate3d(${enterX}, 0, 0)` },
+        { transform: "translate3d(0, 0, 0)" },
+      ],
+      { duration: 200, easing: "ease-in-out", fill: "forwards" }
+    );
+
+    Promise.all([outAnim.finished, inAnim.finished])
+      .catch(() => {}) // an aborted animation still needs the settle logic below to run
+      .then(() => {
+        outAnim.cancel();
+        inAnim.cancel();
+
+        // Restore the outgoing tile to its normal grid state (original src/srcset, no inline geometry).
+        resetElement(outgoing);
+        fullscreen.removeAttribute("id");
+
+        // Atomically transfer fullscreen and give the incoming resource its final static geometry.
+        targetElement.id = "fullscreen";
+        incoming.style.transform = "";
+        fullscreenResource(incoming);
+
+        // Current tile becomes the focus-restore target for a later close.
+        openerElement = targetElement;
+
+        settleAnimation();
+      });
   }
 
   function prevResource() {
     const fullscreen = document.getElementById("fullscreen");
 
-    if (!fullscreen || isAnimating) return;
+    // A 0/1-image gallery has no valid neighbor to slide to.
+    if (!fullscreen || galleryCount <= 1) return;
+
+    // A transition is already running — coalesce to the latest direction instead of dropping it.
+    if (isAnimating) {
+      queuedDirection = "prev";
+      return;
+    }
 
     slideTo(
       fullscreen.dataset.position == "first"
         ? document.querySelector("[data-position='last']")
-        : fullscreen.previousSibling,
-      "animate-slide-out-right",
-      "animate-slide-in-left"
+        : fullscreen.previousElementSibling,
+      "prev"
     );
   }
 
-function nextResource() {
+  function nextResource() {
     const fullscreen = document.getElementById("fullscreen");
 
-    if (!fullscreen || isAnimating) return;
+    // A 0/1-image gallery has no valid neighbor to slide to.
+    if (!fullscreen || galleryCount <= 1) return;
+
+    // A transition is already running — coalesce to the latest direction instead of dropping it.
+    if (isAnimating) {
+      queuedDirection = "next";
+      return;
+    }
 
     slideTo(
-    fullscreen.dataset.position == "last"
+      fullscreen.dataset.position == "last"
         ? document.querySelector("[data-position='first']")
-        : fullscreen.nextSibling,
-    "animate-slide-out-left",
-    "animate-slide-in-right"
+        : fullscreen.nextElementSibling,
+      "next"
     );
-}
+  }
 
 document.onkeydown = (event) => {
     const fullscreen = document.getElementById("fullscreen");
 
-    if (!fullscreen || isAnimating) return;
+    if (!fullscreen) return;
 
     if (event.key == "Escape") {
-    escapeFullscreen(true);
-    } else if (event.key == "ArrowLeft" || event.key == "ArrowUp") {
+    // Reaches escapeFullscreen even mid-animation so a close request gets queued, not dropped.
+    escapeFullscreen();
+    return;
+    }
+
+    if (event.key == "ArrowLeft" || event.key == "ArrowUp") {
     prevResource();
     } else if (event.key == "ArrowRight" || event.key == "ArrowDown") {
     nextResource();
+    } else if (event.key == "Tab") {
+    if (isAnimating) return;
+    trapFullscreenFocus(event);
     }
 };
 
+// Keeps Tab/Shift+Tab cycling among the dialog's own buttons instead of escaping to the page
+// behind it — the last button (close) wraps to the first (prev) and vice versa. Only buttons
+// with tabindex enabled (i.e. controls currently visible) are ever reachable here.
+function trapFullscreenFocus(event) {
+    const controls = document.getElementById("fullscreen-controls");
+    const buttons = controls.querySelectorAll("button:not([tabindex='-1'])");
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (!first) return;
+
+    const withinControls = document.activeElement && controls.contains(document.activeElement);
+
+    if (event.shiftKey) {
+      if (!withinControls || document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else if (!withinControls || document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+}
+
 function zoomIn(element) {
-  const rect = element.getBoundingClientRect();
   element.style.transition = "opacity 200ms ease-in-out";
   element.style.opacity = "0";
   element.style.position = "fixed";
@@ -285,12 +524,14 @@ function zoomIn(element) {
   element.style.width = "100vw";
   element.style.height = "100vh";
   element.style.objectFit = "contain";
-  element.getBoundingClientRect();
   isAnimating = true;
-  element.style.opacity = "1";
+  // rAF flushes the styles above before the opacity transition, without a forced-reflow read.
+  requestAnimationFrame(() => {
+    element.style.opacity = "1";
+  });
   setTimeout(() => {
     fullscreenResource(element);
-    isAnimating = false;
+    settleAnimation();
   }, 200);
 }
 
@@ -301,9 +542,17 @@ function zoomOut(element) {
   setTimeout(() => {
     resetElement(element);
     enableScrolling();
-    isAnimating = false;
     element.style.transition = "none";
     element.style.opacity = "1";
+
+    // Restored only now (not immediately in escapeFullscreen) — doing it earlier let a rapid
+    // reopen fire mid-animation and get torn down when this timer's cleanup ran. preventScroll
+    // avoids yanking the viewport back to a tile that slid out of view during navigation.
+    if (openerElement) {
+      openerElement.focus({ preventScroll: true });
+      openerElement = null;
+    }
+    settleAnimation();
   }, 200);
 }
 
@@ -327,14 +576,26 @@ function resetElement(element) {
     element.style.removeProperty("margin-top");
     element.style.removeProperty("inset");
     element.style.removeProperty("object-fit");
+
+    // Invalidate any in-flight high-quality request so its onload can't swap into this tile later.
+    delete element.dataset.hqRequestId;
+
+    // Restore the responsive grid candidate after the fullscreen geometry is removed.
+    if (element.dataset.originalSrc) {
+      element.src = element.dataset.originalSrc;
+      element.srcset = element.dataset.originalSrcset;
+    }
 }
 
 function disableScrolling() {
     const bodyWidthBefore = document.body.clientWidth;
     document.body.classList.add("overflow-hidden");
-    if (bodyWidthBefore < document.body.clientWidth) {
-    document.body.classList.add("mr-4");
-    }
+    // Deferred to rAF so this reflow-triggering read doesn't stack with zoomIn's writes in the same tick.
+    requestAnimationFrame(() => {
+      if (bodyWidthBefore < document.body.clientWidth) {
+        document.body.classList.add("mr-4");
+      }
+    });
 }
 
 function enableScrolling() {
@@ -345,8 +606,10 @@ function enableScrolling() {
 function enableFullscreenControls() {
     const controls = document.getElementById("fullscreen-controls");
     controls.style.opacity = 1;
+    controls.setAttribute("aria-hidden", "false");
     controls.querySelectorAll("button").forEach((button) => {
     button.style.pointerEvents = "auto";
+    button.removeAttribute("tabindex");
     });
     const backdrop = document.getElementById("fullscreen-backdrop");
     backdrop.style.opacity = 1;
@@ -355,9 +618,14 @@ function enableFullscreenControls() {
 
 function disableFullscreenControls() {
     const controls = document.getElementById("fullscreen-controls");
+    // Blur first — aria-hidden must never be applied to a subtree that still holds focus.
+    controls.querySelectorAll("button").forEach((button) => button.blur());
     controls.style.opacity = 0;
+    controls.setAttribute("aria-hidden", "true");
+    // tabindex="-1" keeps Tab from reaching these while hidden, backing the focus trap.
     controls.querySelectorAll("button").forEach((button) => {
     button.style.pointerEvents = "none";
+    button.setAttribute("tabindex", "-1");
     });
     const backdrop = document.getElementById("fullscreen-backdrop");
     backdrop.style.opacity = 0;
@@ -377,7 +645,7 @@ document.addEventListener("touchstart", (e) => {
     startY = e.changedTouches[0].screenY;
 }, { passive: true });
 
-document.addEventListener("touchmove", (e) => {
+document.addEventListener("touchmove", () => {
     isScrolling = true;
 }, { passive: true });
 
@@ -392,47 +660,56 @@ document.addEventListener("touchend", (e) => {
     return;
     }
     if (Math.abs(startY - endY) > threshold) {
-    escapeFullscreen(true);
+    escapeFullscreen();
     return;
     }
     if (endX < startX) nextResource();
     else if (endX > startX) prevResource();
 });
 
-document.addEventListener("DOMContentLoaded", () => {
-  const resources = document.querySelectorAll(".resource");
-  resources.forEach((resource) => {
-    if (resource.complete) {
-      resource.style.opacity = "1";
-    } else {
-      resource.addEventListener("load", () => {
-        resource.style.opacity = "1";
-      });
-    }
-  });
+// Delegated equivalents of the removed per-tile onkeydown/ontouchend attributes — event.target
+// is properly typed here (unlike the implicit global `event` in an inline handler attribute).
+galleryWrapper?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (!(event.target instanceof Element)) return;
+    const tile = event.target.closest("[data-public-id]");
+    if (!tile) return;
+    event.preventDefault();
+    setFullscreen(tile);
 });
 
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach((entry) => {
-    if (entry.isIntersecting) {
-      const img = entry.target;
-      if (img.complete) {
-        img.style.opacity = "1";
-      } else {
-        img.addEventListener("load", () => {
-          img.style.opacity = "1";
-        });
+galleryWrapper?.addEventListener("touchend", (event) => {
+    if (isScrolling) return;
+    if (!(event.target instanceof Element)) return;
+    const tile = event.target.closest("[data-public-id]");
+    if (!tile) return;
+    setFullscreen(tile);
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  // Consolidated from two previously-redundant reveal mechanisms (a DOMContentLoaded pass and a
+  // separate IntersectionObserver) that both just flipped opacity on load.
+  const reveal = (img) => {
+    if (img.complete) {
+      img.style.opacity = "1";
+      return;
+    }
+    // Reveal on error too — otherwise a failed lazy image stays opacity:0 forever, hiding the
+    // broken-image icon/alt text a user needs to see.
+    const show = () => { img.style.opacity = "1"; };
+    img.addEventListener("load", show, { once: true });
+    img.addEventListener("error", show, { once: true });
+  };
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        reveal(entry.target);
+        observer.unobserve(entry.target);
       }
-      observer.unobserve(img);
-    }
-  });
-}, {
-  rootMargin: "200px"
-});
+    });
+  }, { rootMargin: "200px" });
 
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll(".resource").forEach((img) => {
-    observer.observe(img);
-  });
+  document.querySelectorAll(".resource").forEach((img) => observer.observe(img));
 });
 </script>

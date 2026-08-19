@@ -7,7 +7,7 @@
  *   • `fetchPrintsViaD1(db)`  — runtime (Cloudflare Worker, dashboard + API) via
  *     the bound `DB` D1 database.
  *
- * `resolvePrint()` merges a DB row with Cloudinary contextual metadata and a
+ * `resolvePrint()` merges a DB row with manifest metadata and a
  * sensible default, so an image always renders something reasonable.
  */
 
@@ -84,8 +84,7 @@ export function humanizePublicId(publicId: string): string {
 }
 
 /**
- * Merge DB row + Cloudinary context + defaults into a guaranteed-complete object.
- * `context` is Cloudinary's contextual metadata (e.g. `{ caption, alt, price }`).
+ * Merge DB row + manifest context + defaults into a guaranteed-complete object.
  * `widthPx` / `heightPx` — the photo's pixel dimensions; used to auto-calculate
  * available print sizes when none are explicitly set.
  * `globalDefaults` — the default pricing saved in the dashboard.

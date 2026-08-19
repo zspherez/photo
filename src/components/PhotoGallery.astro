@@ -1,7 +1,10 @@
 ---
-import { v2 as cloudinary } from "cloudinary";
-import { CldImage } from 'astro-cloudinary';
 import Icon from '../components/Icon.astro'
+import {
+  buildImageUrl,
+  getMediaFolder,
+  type MediaAsset,
+} from "../lib/media";
 
 export interface Props {
   folder?: string;
@@ -9,40 +12,12 @@ export interface Props {
   filter?: string;
 }
 
-export interface CloudinaryResource {
-  secure_url: string;
-  public_id: string;
-  width: number;
-  height: number;
-  aspect_ratio: number;
-  context: { alt: string };
-}
-
-cloudinary.config({
-  cloud_name: import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: import.meta.env.PUBLIC_CLOUDINARY_API_KEY,
-  api_secret: import.meta.env.SECRET_CLOUDINARY_API_KEY,
-  secure: true,
-});
-
 // Only fetch images (no videos). Supports a single folder or multiple folders interleaved.
 const folders = Astro.props.folders ?? (Astro.props.folder ? [Astro.props.folder] : []);
-
-const searches = await Promise.all(
-  folders.map((folder) =>
-    cloudinary.search
-      .expression(`folder:${folder} AND resource_type:image`)
-      .with_field("context")
-      .sort_by("display_name", "asc")
-      .max_results(500)
-      .execute()
-  )
-);
-
-const lists = searches.map((s) => s.resources as CloudinaryResource[]);
+const lists = folders.map((folder) => getMediaFolder(folder).filter((asset) => asset.type === "image"));
 
 // Interleave: take one from each folder in turn until all are exhausted.
-const filteredResources: CloudinaryResource[] = [];
+const filteredResources: MediaAsset[] = [];
 const maxLen = Math.max(0, ...lists.map((l) => l.length));
 for (let i = 0; i < maxLen; i++) {
   for (const list of lists) {
@@ -52,15 +27,15 @@ for (let i = 0; i < maxLen; i++) {
 
 // Fixed ladder (capped at 1920) — the native-width-derived ladder was producing 12-17 entries
 // per image, some over 6000w that no viewport here will ever request.
-const BREAKPOINTS = [192, 288, 384, 480, 640, 960, 1280, 1920];
+const BREAKPOINTS = [320, 480, 640, 960, 1280, 1920];
 
-const resourceRatio = (resource: CloudinaryResource) =>
-  resource.aspect_ratio || resource.width / resource.height;
+const resourceRatio = (resource: MediaAsset) =>
+  resource.aspectRatio || resource.width / resource.height;
 
 // Bucketed by aspect ratio because the justified/flex-grow grid gives landscape tiles more row
 // width than portrait/square ones — a flat 33vw either overfetches or underfetches depending on
 // shape. These are generous upper bounds, not exact measurements (layout is unknown at build time).
-function getSizes(resource: CloudinaryResource): string {
+function getSizes(resource: MediaAsset): string {
   const ratio = resourceRatio(resource);
   let tabletVw = 45;
   let desktopVw = 30;
@@ -100,42 +75,42 @@ eagerCandidates.forEach((resource, i) => {
 
 <div class="flex flex-wrap m-0.5" data-gallery-count={filteredResources.length}>
 
-  {filteredResources.map((CloudinaryResource, index) => {
+  {filteredResources.map((resource, index) => {
     const isEager = index < EAGER_COUNT;
     const isPriority = index === landscapeIndex || index === portraitIndex;
+    const srcset = BREAKPOINTS.map(
+      (width) => `${buildImageUrl(resource.key, `w-${width}`)} ${width}w`,
+    ).join(", ");
 
     return (
       <div
         data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
-        data-public-id={CloudinaryResource.public_id}
-        data-width={CloudinaryResource.width}
-        data-height={CloudinaryResource.height}
-        data-alt={CloudinaryResource.context?.alt || ""}
+        data-public-id={resource.publicId}
+        data-fullscreen-url={buildImageUrl(resource.key, "fullscreen")}
+        data-width={resource.width}
+        data-height={resource.height}
+        data-alt={resource.alt}
         tabindex="0"
         role="button"
         aria-label={`View photo ${index + 1} of ${filteredResources.length}`}
         onclick="setFullscreen(this)"
         class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto max-w-[calc(50%-4px)] sm:max-w-none"
-        style={`flex-grow: ${CloudinaryResource.width * 350 / CloudinaryResource.height}; flex-basis: ${CloudinaryResource.width * 350 / CloudinaryResource.height}px;`}
+        style={`flex-grow: ${resource.width * 350 / resource.height}; flex-basis: ${resource.width * 350 / resource.height}px;`}
       >
 
         <!-- placeholder for proper grid sizing -->
-        <div class="block" style={`padding-bottom: ${CloudinaryResource.height / CloudinaryResource.width * 100}%`}></div>
+        <div class="block" style={`padding-bottom: ${resource.height / resource.width * 100}%`}></div>
 
-        <CldImage
-          src={CloudinaryResource.public_id}
-          width={CloudinaryResource.width}
-          height={CloudinaryResource.height}
-          alt={CloudinaryResource.context?.alt || ""}
-          sizes={getSizes(CloudinaryResource)}
-          breakpoints={BREAKPOINTS}
+        <img
+          src={buildImageUrl(resource.key, "w-960")}
+          srcset={srcset}
+          width={resource.width}
+          height={resource.height}
+          alt={resource.alt}
+          sizes={getSizes(resource)}
           class={`resource absolute align-bottom top-0 w-full h-full object-cover fullscreen:pointer-events-none ${isEager ? "" : "opacity-0 transition-opacity ease-in duration-1000"}`}
-          crop={{
-            type: 'fill',
-            source: true
-          }}
           loading={isEager ? "eager" : "lazy"}
-          priority={isPriority}
+          fetchpriority={isPriority ? "high" : undefined}
         />
       </div>
     );
@@ -258,9 +233,9 @@ eagerCandidates.forEach((resource, i) => {
   }
 
   function loadHighQualityImage(element, imgElement) {
-    const publicId = element.dataset.publicId;
+    const highQualityUrl = element.dataset.fullscreenUrl;
     
-    if (!publicId || !imgElement) return;
+    if (!highQualityUrl || !imgElement) return;
 
     // Captured once so the original responsive image can always be restored later.
     if (!imgElement.dataset.originalSrc) {
@@ -272,34 +247,6 @@ eagerCandidates.forEach((resource, i) => {
     const requestId = ++hqRequestId;
     imgElement.dataset.hqRequestId = String(requestId);
 
-    // Extract cloud name from the original src (stable across repeated opens of this tile).
-    let cloudName = null;
-    const existingSrc = imgElement.dataset.originalSrc || imgElement.src || imgElement.getAttribute('src');
-    if (existingSrc) {
-      const match = existingSrc.match(/res\.cloudinary\.com\/([^\/]+)\//);
-      if (match) {
-        cloudName = match[1];
-      }
-    }
-    
-    // Fallback if we can't extract cloud name
-    if (!cloudName) {
-      console.warn('Could not extract Cloudinary cloud name, skipping high-quality load');
-      return;
-    }
-
-    // Cap DPR and target dimensions so a 5K/6K or DPR3 display can't request an unbounded,
-    // multi-megapixel fullscreen asset.
-    const cappedDpr = Math.min(window.devicePixelRatio || 1, 2);
-    const targetWidth = Math.min(Math.ceil(window.innerWidth * cappedDpr), 2560);
-    const targetHeight = Math.min(Math.ceil(window.innerHeight * cappedDpr), 1600);
-    
-    // Create high-quality Cloudinary URL optimized for fullscreen viewing
-    // Encode each path segment separately so spaces/special chars in the public ID are safe
-    // without escaping the folder-separating slashes themselves.
-    const encodedPublicId = publicId.split('/').map(encodeURIComponent).join('/');
-    const highQualityUrl = `https://res.cloudinary.com/${cloudName}/image/upload/c_fit,w_${targetWidth},h_${targetHeight},q_auto:good,f_auto/${encodedPublicId}`;
-    
     // Preload the high-quality image
     const highQualityImg = new Image();
     highQualityImg.onload = () => {

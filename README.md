@@ -6,7 +6,7 @@ Source for my concert, sports, and event photography portfolio, hosted at both [
 
 - **[Astro](https://astro.build)** for static site generation
 - **[Tailwind](https://tailwindcss.com)** for styling
-- **[Cloudinary](https://cloudinary.com)** as the media library + CDN
+- **Cloudflare R2 + Images** for media storage, delivery, and image transformations
 - **[Partytown](https://partytown.builder.io)** to offload Google Analytics into a web worker
 - **Two deploys from one repo**:
   - **Cloudflare Pages** → [rehders.photos](https://rehders.photos), built via `@astrojs/cloudflare` on every push to `main`
@@ -14,24 +14,23 @@ Source for my concert, sports, and event photography portfolio, hosted at both [
 
 ## Architecture
 
-Galleries aren't authored as JSON or markdown — they're pulled directly from Cloudinary folders at build time. Each page maps to one folder (e.g. `index.astro` → `concerts`, `sports.astro` → `sports`). Add an image to a folder in Cloudinary, push to `main`, and the new image shows up.
+Gallery metadata is stored in `src/data/media-manifest.json`. Image originals live in the private `rehders-photo-originals` R2 bucket. Pre-generated responsive WebP variants, MP4s, and poster images live in `rehders-photo-media` and are delivered through `media.rehders.photos`.
 
 ```mermaid
 flowchart TD
     subgraph author["Authoring"]
         direction LR
-        upload[Upload to<br/>Cloudinary folder]
+        upload[Upload media<br/>and update manifest]
         commit[git push to main]
     end
 
     subgraph build["CI build (runs on every push)"]
         direction LR
         astro["astro build"]
-        api[Cloudinary<br/>Admin API]
+        manifest[Media manifest]
         dist[dist/]
-        astro -->|"search folder:concerts"| api
-        api -->|public_ids, dimensions| astro
-        astro -->|static HTML + CDN URLs| dist
+        manifest -->|keys, dimensions, metadata| astro
+        astro -->|static HTML + media URLs| dist
     end
 
     subgraph hosts["Hosts"]
@@ -43,13 +42,13 @@ flowchart TD
     subgraph runtime["Visitor's browser"]
         direction LR
         html[Static HTML]
-        cdn[Cloudinary CDN<br/>res.cloudinary.com]
+        media[R2 custom domain<br/>WebP variants + MP4s + posters]
         gtm[GA via Partytown<br/>web worker]
-        html -->|img/video src| cdn
+        html -->|images, video + posters| media
         html -.->|sandboxed| gtm
     end
 
-    upload --> api
+    upload --> manifest
     commit --> astro
     dist --> cf
     dist --> gh
@@ -57,7 +56,7 @@ flowchart TD
     gh --> html
 ```
 
-The Cloudinary `api_secret` is only used during the Actions build — it never ends up in the deployed HTML/JS. Output URLs use Cloudinary's auto-transform endpoints (`f_auto,q_auto`), so each browser gets an appropriately sized/encoded image.
+Image variants are generated once during publishing instead of transformed during visitor requests. This avoids Worker CPU limits and keeps delivery as a normal cached R2 object request. The GitHub Pages mirror uses the same canonical Cloudflare media URLs.
 
 ## Run locally
 
@@ -71,10 +70,6 @@ npm run preview  # serves the built site
 Requires a `.env`:
 
 ```
-PUBLIC_CLOUDINARY_CLOUD_NAME=
-PUBLIC_CLOUDINARY_API_KEY=
-SECRET_CLOUDINARY_API_KEY=
-
 # Print-sales gallery — build-time read of print metadata from Cloudflare D1.
 # Needed during BOTH builds so the /prints gallery renders prices/descriptions.
 CF_ACCOUNT_ID=
@@ -93,7 +88,52 @@ CF_ACCESS_AUD=            # the Access application's Audience (AUD) tag
 CF_DEPLOY_HOOK_URL=
 ```
 
-The two `PUBLIC_*` vars are inlined into the client bundle (Astro convention); the `SECRET_*` one stays server-side and is used only during `astro build`.
+### Publishing future media
+
+One-time local prerequisites:
+
+```sh
+nvm use
+npm ci
+npx wrangler login
+brew install ffmpeg # provides ffprobe for video metadata
+```
+
+Publish one or more photos, or every supported image in a directory:
+
+```sh
+npm run media:publish -- --folder concerts "/path/to/photos"
+npm run media:publish -- --folder prints "/path/to/print-files"
+```
+
+Supported image folders are `concerts`, `music`, `grads`, `sports`, `events`,
+`bts`, `lifestyle`, `prints`, and `system`. Use the existing asset's base
+filename to replace it while preserving its manifest identity, storage key,
+and alt text. The `system` folder contains the profile image, social-sharing
+image, and logo/favicon.
+
+Publish videos and match poster files by filename:
+
+```sh
+npm run media:publish -- \
+  --folder video \
+  --posters "/path/to/video-thumbnails" \
+  "/path/to/videos"
+```
+
+The command uploads originals, generates responsive variants, updates matching
+assets in the manifest, and preserves existing alt text. Commit the updated
+manifest and deploy normally:
+
+```sh
+git add src/data/media-manifest.json
+git commit -m "Update galleries"
+git push
+```
+
+Pushing `main` rebuilds both hosted copies. For print images, set the title,
+description, and price in `/admin` after publishing; those metadata changes
+appear on the public gallery after the next build.
 
 ## Print sales (`/prints`) + dashboard (`/admin`)
 
@@ -103,11 +143,12 @@ The `/prints` page is a sales gallery: hover a photo for its title, description 
 
 Preview images never expose full resolution. Each rendition is:
 
-- **resolution-capped** (`c_limit` — ~900px in the grid, ~1600px enlarged): crisp on screen, useless for a real print;
-- **watermarked** with a tiled, semi-transparent text overlay baked into the pixels;
-- **delivered via signed URLs** (`s--xxxxxxxx--`), signed with the Cloudinary `api_secret`.
+- **resolution-capped** by fixed pre-generated variants (~900px in the grid, ~1600px enlarged);
+- **watermarked** while protected grid renditions are generated during publishing;
+- generated from originals held in a **private R2 bucket** with no public URL.
 
-To fully lock it down, enable **Strict Transformations** in the Cloudinary console (Settings → Security → *Allowed for unsigned*: off / require signed). With it on, the original and any un-signed/larger rendition return `401`, so the URL can't be hand-edited to fetch full resolution. The signing helper (`src/lib/cloudinary-image.ts`) uses the Web Crypto API and produces byte-identical signatures to the official SDK.
+Only the pre-generated variants are public. Originals remain in a private R2
+bucket, so changing a delivery URL cannot reveal the source file.
 
 ### How rendering / publishing works
 
@@ -115,7 +156,7 @@ To fully lock it down, enable **Strict Transformations** in the Cloudinary conso
 - The `/admin` dashboard and `/api/prints` endpoint are **on-demand (SSR)** routes that run only on the Cloudflare deploy via the bound `DB` database. On the static GitHub Pages mirror they simply 404.
 - Editing in the dashboard writes to D1 immediately; the public gallery reflects changes **on the next build**. Wire a Cloudflare **deploy hook** (and optionally a GitHub `workflow_dispatch`) to rebuild after edits — set its URL as `CF_DEPLOY_HOOK_URL` for the `/api/deploy` endpoint to use.
 
-Metadata for each image resolves in this order: D1 row → Cloudinary contextual metadata (`caption` / `alt`) → sensible defaults (`src/lib/prints.ts`).
+Metadata for each image resolves in this order: D1 row → manifest alt text → sensible defaults (`src/lib/prints.ts`).
 
 ### One-time Cloudflare setup
 
@@ -131,11 +172,12 @@ npm run db:migrate:local     # local dev database
 Then, in the Cloudflare dashboard:
 
 - **Bind D1** to the Pages project as `DB` (Settings → Functions → D1 bindings).
+- Create the private `rehders-photo-originals` and public `rehders-photo-media` R2 buckets, then connect `media.rehders.photos` to the delivery bucket.
 - **Cloudflare Access**: create an Access application protecting `/admin*` and `/api/prints*`, with a policy allowing only your email. Copy its **AUD** tag and your team domain into the Pages env vars.
-- **Pages environment variables / secrets**: `PUBLIC_CLOUDINARY_CLOUD_NAME`, `PUBLIC_CLOUDINARY_API_KEY`, `SECRET_CLOUDINARY_API_KEY`, `CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_D1_API_TOKEN`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `CF_DEPLOY_HOOK_URL` (optional).
+- **Pages environment variables / secrets**: `CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_D1_API_TOKEN`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, `CF_DEPLOY_HOOK_URL` (optional).
 - **GitHub Pages**: add `CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_D1_API_TOKEN` as Actions secrets (and pass them through in `deploy.yml`) so the mirror's `/prints` gallery shows the same metadata.
 
-Upload the photos you want to sell into a Cloudinary folder named **`prints`**, then open `/admin` to set titles, descriptions and pricing.
+Add print originals to the `prints` section of the media manifest, upload them to private R2, then open `/admin` to set titles, descriptions and pricing.
 
 ### Local development
 
@@ -143,9 +185,9 @@ Upload the photos you want to sell into a Cloudinary folder named **`prints`**, 
 
 ## Layout
 
-- `src/pages/` — one file per route; each picks a Cloudinary folder
+- `src/pages/` — one file per route; each picks a manifest folder
 - `src/components/` — gallery variants (`PhotoGallery`, `VideoGallery`, `Gallery`, `PrintGallery`), header, footer, contact, social
-- `src/lib/` — print-sales helpers (`prints.ts` data access, `cloudinary-image.ts` signed URLs, `cloudinary-admin.ts` admin API, `auth.ts` Access verification)
+- `src/lib/` — media URL/manifest helpers, print-sales data access, and Access verification
 - `src/pages/admin/` + `src/pages/api/prints.ts` — SSR dashboard + metadata API (Cloudflare only)
 - `migrations/` — D1 schema; `wrangler.toml` — D1 binding + Pages config
 - `src/layouts/Layout.astro` — shared page shell (head tags, OG, fonts)

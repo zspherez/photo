@@ -22,9 +22,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Install, build, and upload your site
         env:
-          PUBLIC_CLOUDINARY_CLOUD_NAME: ${{ secrets.PUBLIC_CLOUDINARY_CLOUD_NAME }}
-          PUBLIC_CLOUDINARY_API_KEY: ${{ secrets.PUBLIC_CLOUDINARY_API_KEY }}
-          SECRET_CLOUDINARY_API_KEY: ${{ secrets.SECRET_CLOUDINARY_API_KEY }}
           # Build-time read of print metadata from Cloudflare D1 (so the mirror's
           # /prints gallery shows the same prices/descriptions). Optional: if
           # unset, the gallery still builds (without DB metadata).

@@ -1,8 +1,7 @@
 ---
 import Layout from "../../layouts/Layout.astro";
 import { verifyAccess } from "../../lib/auth";
-import { searchFolder } from "../../lib/cloudinary-admin";
-import { buildPrintImageUrl, THUMB_WIDTH } from "../../lib/cloudinary-image";
+import { buildImageUrl, getMediaFolder } from "../../lib/media";
 import {
   fetchPrintsViaD1,
   humanizePublicId,
@@ -40,30 +39,21 @@ if (runtime?.DB) {
     authed = Boolean(user);
 
     if (authed) {
-      const cloudName = runtime.PUBLIC_CLOUDINARY_CLOUD_NAME!;
-      const apiKey = runtime.PUBLIC_CLOUDINARY_API_KEY!;
-      const apiSecret = runtime.SECRET_CLOUDINARY_API_KEY!;
-
       const [resources, metadata] = await Promise.all([
-        searchFolder({ cloudName, apiKey, apiSecret }, folder),
+        Promise.resolve(getMediaFolder(folder).filter((asset) => asset.type === "image")),
         fetchPrintsViaD1(runtime.DB),
       ]);
 
-      cards = await Promise.all(
-        resources.map(async (r) => {
-          const thumb = await buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
-            width: THUMB_WIDTH,
-            watermark: "",
-            sign: true,
-          });
-          const dbInfo     = metadata[r.public_id];
+      cards = resources.map((r) => {
+          const thumb = buildImageUrl(r.key, "print-w-480");
+          const dbInfo     = metadata[r.publicId];
           const dbPriceMap = new Map((dbInfo?.sizes ?? []).map(s => [s.label, s.price]));
           const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
           return {
-            publicId: r.public_id,
+            publicId: r.publicId,
             thumb,
             current: dbInfo ?? {},
-            placeholderTitle: humanizePublicId(r.public_id),
+            placeholderTitle: humanizePublicId(r.publicId),
             aspectSizes: matchedSpecs.map(spec => ({
               label: spec.label,
               defaultPrice: spec.defaultPrice,
@@ -72,8 +62,7 @@ if (runtime?.DB) {
             maxSize: maxPrintSizeLabel(r.width, r.height),
             category: dbInfo?.category ?? "",
           };
-        })
-      );
+        });
     }
   } catch (err) {
     errorMessage = (err as Error).message;
@@ -184,7 +173,7 @@ if (runtime?.DB) {
         {errorMessage && <p class="mt-2 text-red-400">{errorMessage}</p>}
         {cards.length === 0 && (
           <p class="mt-6 text-neutral-400">
-            No images found in the <code>{folder}</code> Cloudinary folder.
+            No images found in the <code>{folder}</code> media manifest.
           </p>
         )}
 

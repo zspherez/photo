@@ -15,8 +15,7 @@ export default defineConfig({
   site: "https://rehde.rs",
   output: "static",
   adapter: cloudflare({
-    // Expose Cloudflare bindings (the D1 `DB` binding from wrangler.toml) to
-    // `astro dev` so the dashboard works locally.
+    // Expose Cloudflare R2 bindings from wrangler.toml to local development.
     platformProxy: { enabled: true },
     // Images are pre-generated and delivered directly from R2.
     imageService: "passthrough",

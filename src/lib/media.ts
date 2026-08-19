@@ -12,13 +12,17 @@ export interface MediaAsset {
   posterKey?: string;
 }
 
-interface MediaManifest {
+export interface MediaManifest {
   version: number;
   generatedAt: string;
   folders: Record<string, MediaAsset[]>;
 }
 
 const manifest = manifestData as MediaManifest;
+
+export function getMediaManifest(): MediaManifest {
+  return structuredClone(manifest);
+}
 
 export const MEDIA_BASE_URL =
   import.meta.env.PUBLIC_MEDIA_BASE_URL || "https://media.rehders.photos";

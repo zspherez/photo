@@ -9,9 +9,8 @@ const execFileAsync = promisify(execFile);
 const MANIFEST_PATH = new URL("../src/data/media-manifest.json", import.meta.url);
 const PRIVATE_BUCKET = "rehders-photo-originals";
 const DELIVERY_BUCKET = "rehders-photo-media";
-const IMAGE_FOLDERS = new Set(["concerts", "music", "grads", "sports", "events", "bts", "lifestyle", "prints", "system"]);
+const IMAGE_FOLDERS = new Set(["concerts", "music", "grads", "sports", "events", "bts", "lifestyle", "system"]);
 const IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1920];
-const PRINT_WIDTHS = [320, 480, 640, 900];
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".avif"]);
 const VIDEO_EXTENSIONS = new Set([".mp4"]);
 
@@ -62,10 +61,6 @@ function logicalName(value) {
   return value.replace(/_[a-z0-9]{6}$/i, "");
 }
 
-function encodedUrl(base, key) {
-  return `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
-}
-
 async function runWrangler(args) {
   let lastError;
   for (let attempt = 1; attempt <= 4; attempt++) {
@@ -100,29 +95,18 @@ function variantKey(preset, key) {
   return `variants/${preset}/${key.replace(/\.[^./]+$/, ".webp")}`;
 }
 
-async function writeVariant(source, outputPath, width, height, watermark, watermarkEnlarged = false) {
-  let pipeline = sharp(source).rotate().resize({
+async function writeVariant(source, outputPath, width, height) {
+  const pipeline = sharp(source).rotate().resize({
     width,
     height,
     fit: "inside",
     withoutEnlargement: true,
   });
 
-  if (watermark) {
-    const resized = await pipeline.toBuffer();
-    const logoWidth = Math.min(160, Math.max(80, Math.round(width * 0.18)));
-    const logo = await sharp(watermark).resize({ width: logoWidth, withoutEnlargement: true }).webp().toBuffer();
-    pipeline = sharp(resized).composite([{
-      input: logo,
-      gravity: "southeast",
-      blend: "over",
-    }]);
-  }
-
-  await pipeline.webp({ quality: watermarkEnlarged ? 86 : 82 }).toFile(outputPath);
+  await pipeline.webp({ quality: 82 }).toFile(outputPath);
 }
 
-async function publishImage(file, folder, manifest, tempDirectory, watermark) {
+async function publishImage(file, folder, manifest, tempDirectory) {
   const inputId = publicId(file);
   const existing = (manifest.folders[folder] ?? []).find(
     (asset) => logicalName(asset.publicId) === logicalName(inputId),
@@ -139,13 +123,7 @@ async function publishImage(file, folder, manifest, tempDirectory, watermark) {
   await upload(PRIVATE_BUCKET, key, file, metadata.format === "jpeg" ? "image/jpeg" : `image/${metadata.format}`);
 
   const variants =
-    folder === "prints"
-      ? [
-        ...PRINT_WIDTHS.map((variantWidth) => ({ preset: `print-w-${variantWidth}`, width: variantWidth, watermark: true })),
-        { preset: "print-enlarged", width: 1600, watermark: false },
-        { preset: "print-enlarged-watermarked", width: 1600, watermark: true },
-        ]
-      : folder === "system"
+    folder === "system"
         ? id === "social"
           ? [{ preset: "w-1600", width: 1600, watermark: false }]
           : logicalName(id) === "logo"
@@ -159,7 +137,7 @@ async function publishImage(file, folder, manifest, tempDirectory, watermark) {
   await Promise.all(variants.map(async (variant) => {
     const output = join(tempDirectory, `${crypto.randomUUID()}.webp`);
     try {
-      await writeVariant(file, output, variant.width, variant.height, variant.watermark ? watermark : undefined);
+      await writeVariant(file, output, variant.width, variant.height);
       await upload(DELIVERY_BUCKET, variantKey(variant.preset, key), output, "image/webp");
     } finally {
       await rm(output, { force: true });
@@ -248,25 +226,10 @@ try {
   } else {
     if (!IMAGE_FOLDERS.has(args.folder)) throw new Error(`Unsupported image folder: ${args.folder}`);
     const files = await expandInputs(args.files, IMAGE_EXTENSIONS);
-    let watermark;
-    if (args.folder === "prints") {
-      const logo = (manifest.folders.system ?? []).find(
-        (asset) => logicalName(asset.publicId) === "logo",
-      );
-      if (!logo) throw new Error("The system logo is missing from the manifest");
-      const response = await fetch(
-        encodedUrl(
-          "https://media.rehders.photos",
-          variantKey("w-192", logo.key),
-        ),
-      );
-      if (!response.ok) throw new Error("Could not download the print watermark");
-      watermark = Buffer.from(await response.arrayBuffer());
-    }
     published = [];
     for (const file of files) {
       console.log(`Publishing image ${basename(file)}`);
-      published.push(await publishImage(file, args.folder, manifest, tempDirectory, watermark));
+      published.push(await publishImage(file, args.folder, manifest, tempDirectory));
     }
   }
 

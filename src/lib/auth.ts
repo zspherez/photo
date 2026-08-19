@@ -1,7 +1,7 @@
 /**
  * Cloudflare Access verification for the dashboard + API.
  *
- * The `/admin` and `/api/prints` routes are placed behind a Cloudflare Access
+ * The `/admin` and `/api/media/*` routes are placed behind a Cloudflare Access
  * application (configured in the Cloudflare dashboard). Access injects a signed
  * JWT in the `Cf-Access-Jwt-Assertion` header (and `CF_Authorization` cookie).
  * We verify that JWT against the team's public keys so the routes can't be

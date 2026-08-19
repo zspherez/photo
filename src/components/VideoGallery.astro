@@ -1,105 +1,22 @@
 ---
-import { v2 as cloudinary } from "cloudinary";
 import Icon from './Icon.astro';
+import { buildMediaUrl, getMediaFolder } from "../lib/media";
 
 export interface Props {
   folder: string; // Main folder with videos
-  thumbnailFolder?: string; // Optional thumbnail folder
-}
-
-export interface CloudinaryResource {
-  secure_url: string;
-  resource_type: string;
-  width: number;
-  height: number;
-  duration: number;
-  aspect_ratio: number;
-  context?: { alt?: string };
 }
 
 // Tiles beyond this index (DOM order) get their poster gated by data-poster/observer.
 const EAGER_POSTER_COUNT = 4;
 
-cloudinary.config({
-  cloud_name: import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: import.meta.env.PUBLIC_CLOUDINARY_API_KEY,
-  api_secret: import.meta.env.SECRET_CLOUDINARY_API_KEY,
-  secure: true,
-});
-
-// Determine thumbnail folder name
-const thumbnailFolderName = Astro.props.thumbnailFolder || `${Astro.props.folder}-thumbnails`;
-
-// Fetch videos and thumbnails concurrently; the two searches are independent.
-const [videoSearch, thumbnailSearch] = await Promise.all([
-  cloudinary.search
-    .expression(`folder:${Astro.props.folder} AND resource_type:video`)
-    .with_field("context")
-    .sort_by("display_name", "asc")
-    .max_results(500)
-    .execute(),
-  cloudinary.search
-    .expression(`folder:${thumbnailFolderName}`)
-    .sort_by("display_name", "asc")
-    .max_results(500)
-    .execute(),
-]);
-
-const videos = videoSearch.resources as CloudinaryResource[];
-const thumbnails = thumbnailSearch.resources as CloudinaryResource[];
-
-// Create a mapping of video filenames to thumbnail URLs
-const thumbnailMap = new Map<string, string>();
-thumbnails.forEach(thumbnail => {
-  // Extract full filename from URL
-  const fullFilename = thumbnail.secure_url.split('/').pop() || '';
-  // Split filename into name and extension
-  const dotIndex = fullFilename.lastIndexOf('.');
-  if (dotIndex > 7) {  // Make sure we have enough characters
-    // Get the base name without the 7-char ID and extension
-    const baseName = fullFilename.substring(0, dotIndex - 7);
-    thumbnailMap.set(baseName, thumbnail.secure_url);
-  }
-});
-
-// Helper function to optimize video URLs
-function optimizeVideoUrl(url: string): string {
-  if (url.includes('cloudinary.com')) {
-    // Add video optimization parameters
-    return url.replace('/upload/', '/upload/q_auto,vc_auto,f_auto/');
-  }
-  return url;
-}
-
-// Helper function to get the thumbnail URL for a video
-function getThumbnailUrl(videoUrl: string): string {
-  // Extract full filename from URL
-  const fullFilename = videoUrl.split('/').pop() || '';
-  // Split filename into name and extension
-  const dotIndex = fullFilename.lastIndexOf('.');
-  
-  if (dotIndex > 7) {  // Make sure we have enough characters
-    // Get the base name without the 7-char ID and extension
-    const baseName = fullFilename.substring(0, dotIndex - 7);
-    
-    // Return the mapped thumbnail if available, otherwise fall back to default method
-    if (thumbnailMap.has(baseName)) {
-      // Cap width, aspect-preserving, no crop
-      return thumbnailMap.get(baseName)!.replace('/upload/', '/upload/c_limit,w_1000,f_auto,q_auto/');
-    }
-  }
-  
-  // Fall back to default method if no match found
-  const baseUrl = videoUrl.replace(".mp4", ".jpg");
-  return baseUrl.replace('/upload/', '/upload/c_limit,w_1000,f_auto,q_auto/');
-}
+const videos = getMediaFolder(Astro.props.folder).filter((asset) => asset.type === "video");
 ---
 
 <div class="flex flex-wrap m-0.5" data-gallery-count={videos.length}>
   {videos.map((video, index) => {
     const isEager = index < EAGER_POSTER_COUNT;
-    const posterUrl = getThumbnailUrl(video.secure_url);
-    const label = video.context?.alt || `Play video ${index + 1}`;
+    const posterUrl = video.posterKey ? buildMediaUrl(video.posterKey) : undefined;
+    const label = video.alt || `Play video ${index + 1}`;
     return (
     <div
       data-position={`${index == 0 ? "first" : index + 1 == videos.length ? "last" : "middle"}`}
@@ -125,11 +42,11 @@ function getThumbnailUrl(videoUrl: string): string {
           loop webkit-playsinline playsinline
           preload="none"
           onclick="toggleVideoPlayback(this)"
-          data-poster={posterUrl}
+          data-poster={posterUrl || undefined}
           poster={isEager ? posterUrl : undefined}
           class={`resource absolute top-0 h-full w-full object-cover align-bottom pointer-events-none fullscreen:pointer-events-auto ${isEager ? "opacity-100" : "opacity-0 transition-opacity ease-in duration-1000"}`}
         >
-          <source src={optimizeVideoUrl(video.secure_url)} type="video/mp4" />
+          <source src={buildMediaUrl(video.key)} type="video/mp4" />
           Your browser does not support HTML video.
         </video>
       </div>
@@ -138,7 +55,7 @@ function getThumbnailUrl(videoUrl: string): string {
         <span class="fullscreen:hidden"><Icon name="play" /></span>
         <div class="text-xs">
           <span id={`current-time-video-${index}`} class="current-time hidden fullscreen:inline-flex">0:00 / </span>
-          <span>{new Date(video.duration * 1000).toISOString().slice(15, 19)}</span>
+          <span>{new Date((video.duration || 0) * 1000).toISOString().slice(15, 19)}</span>
         </div>
       </div>
     </div>

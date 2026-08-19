@@ -1,6 +1,8 @@
 ---
 import Footer from '../components/Footer.astro';
 
+import { buildImageUrl, getMediaFolder } from "../lib/media";
+
 export interface Props {
   title: string;
   description: string;
@@ -8,7 +10,10 @@ export interface Props {
 }
 
 const { title, description, hidden = false } = Astro.props;
-const share_image = "https://res.cloudinary.com/ddsnvfih0/image/upload/v1730050128/social.jpg";
+const systemAssets = getMediaFolder("system");
+const socialImage = systemAssets.find((asset) => asset.publicId === "social");
+const logo = systemAssets.find((asset) => asset.publicId === "logo_zde1ld");
+const share_image = socialImage ? buildImageUrl(socialImage.key, "w-1600") : "";
 ---
 
 <!DOCTYPE html>
@@ -19,7 +24,7 @@ const share_image = "https://res.cloudinary.com/ddsnvfih0/image/upload/v17300501
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content={description} />
     <meta name="robots" content={`${hidden ? "noindex" : "all"}`}>
-    <link rel="icon" type="image/png" href="https://res.cloudinary.com/ddsnvfih0/image/upload/v1736227309/logo_zde1ld.svg"/>
+    {logo && <link rel="icon" href={buildImageUrl(logo.key, "w-192")}/>}
 
     <!-- <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌉</text></svg>" /> -->
     <!-- <link rel="preload" href="/fonts/subset-OpenSans-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous" />

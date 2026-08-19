@@ -1,12 +1,6 @@
 ---
-import { v2 as cloudinary } from "cloudinary";
 import Icon from "./Icon.astro";
-import {
-  buildPrintImageUrl,
-  GRID_WIDTH,
-  GRID_WIDTHS,
-  ENLARGED_WIDTH,
-} from "../lib/cloudinary-image";
+import { buildImageUrl, getMediaFolder } from "../lib/media";
 import {
   fetchPrintsViaRest,
   humanizePublicId,
@@ -21,44 +15,15 @@ import {
 
 export interface Props {
   folder?: string;
-  watermark?: string;
   /** Off by default — watermarking the enlarged image is a product decision pending sign-off. */
   watermarkEnlarged?: boolean;
 }
 
-interface CloudinaryResource {
-  public_id: string;
-  width: number;
-  height: number;
-  context?: { custom?: Record<string, string> } & Record<string, string>;
-}
-
-const { folder = "prints", watermark = "logo_zde1ld", watermarkEnlarged = false } = Astro.props;
-
-const cloudName = import.meta.env.PUBLIC_CLOUDINARY_CLOUD_NAME;
-const apiSecret = import.meta.env.SECRET_CLOUDINARY_API_KEY;
-
-cloudinary.config({
-  cloud_name: cloudName,
-  api_key: import.meta.env.PUBLIC_CLOUDINARY_API_KEY,
-  api_secret: apiSecret,
-  secure: true,
-});
-
-// Cloudinary search and D1 metadata are independent — fetch concurrently.
-const [search, metadata] = await Promise.all([
-  cloudinary.search
-    .expression(`folder:${folder} AND resource_type:image`)
-    .with_field("context")
-    .sort_by("display_name", "asc")
-    .max_results(500)
-    .execute(),
-  fetchPrintsViaRest(),
-]);
-
-const resources = (search.resources ?? []) as CloudinaryResource[];
-
-const sign = Boolean(apiSecret);
+const { folder = "prints", watermarkEnlarged = false } = Astro.props;
+const resources = getMediaFolder(folder).filter((asset) => asset.type === "image");
+const metadata = await fetchPrintsViaRest();
+const GRID_WIDTH = 900;
+const GRID_WIDTHS = [320, 480, 640, 900] as const;
 
 /**
  * Build the display sizes for a photo.
@@ -88,33 +53,23 @@ function priceSummary(sizes: PrintSize[]): string | null {
 
 const items = await Promise.all(
   resources.map(async (r) => {
-    const context  = (r.context?.custom ?? r.context) as Record<string, string> | undefined;
-    const dbInfo   = metadata[r.public_id];
-    const title    = dbInfo?.title || humanizePublicId(r.public_id);
-    const description = dbInfo?.description || context?.caption || context?.alt ||
+    const dbInfo   = metadata[r.publicId];
+    const title    = dbInfo?.title || humanizePublicId(r.publicId);
+    const description = dbInfo?.description || r.alt ||
       "Open-edition fine art print, signed on the reverse.";
 
     const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
     const displaySizes = buildDisplaySizes(matchedSpecs, dbInfo);
 
     // Fixed width ladder keeps every grid variant a pre-signed transformation.
-    const [gridLadder, enlargedUrl] = await Promise.all([
-      Promise.all(
-        GRID_WIDTHS.map(async (w) => ({
-          w,
-          url: await buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
-            width: w,
-            watermark,
-            sign,
-          }),
-        }))
-      ),
-      buildPrintImageUrl({ cloudName, apiSecret }, r.public_id, {
-        width: ENLARGED_WIDTH,
-        watermark: watermarkEnlarged ? watermark : "",
-        sign,
-      }),
-    ]);
+    const gridLadder = GRID_WIDTHS.map((w) => ({
+      w,
+      url: buildImageUrl(r.key, `print-w-${w}`),
+    }));
+    const enlargedUrl = buildImageUrl(
+      r.key,
+      watermarkEnlarged ? "print-enlarged-watermarked" : "print-enlarged",
+    );
     const gridSrcset = gridLadder.map(({ url, w }) => `${url} ${w}w`).join(", ");
     const gridUrl = gridLadder[gridLadder.length - 1].url; // no-srcset fallback
     // Mirrors the tile's own flex-basis math so `sizes` matches its real box.

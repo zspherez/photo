@@ -2,6 +2,11 @@
 import Layout from "../layouts/Layout.astro";
 import Header from "../components/Header.astro";
 import ContactInfo from "../components/ContactInfo.astro";
+import { buildImageUrl, getMediaFolder } from "../lib/media";
+
+const profile = getMediaFolder("system").find(
+  (asset) => asset.publicId === "rehders_photos_mjmpdc",
+);
 ---
 
 <Layout
@@ -37,7 +42,7 @@ import ContactInfo from "../components/ContactInfo.astro";
             <ContactInfo />
           </div>
           <div class="profpic">
-            <img src="https://res.cloudinary.com/ddsnvfih0/image/upload/v1736227312/rehders_photos_mjmpdc.jpg" alt="Josh Rehders" />
+            {profile && <img src={buildImageUrl(profile.key, "w-960")} alt="Josh Rehders" />}
           </div>
         </div>
       </div>

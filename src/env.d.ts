@@ -13,11 +13,9 @@ interface CloudflareEnv {
   CF_ACCESS_AUD?: string;
   CF_DEPLOY_HOOK_URL?: string;
   DASHBOARD_DEV_BYPASS?: string;
-  PUBLIC_CLOUDINARY_CLOUD_NAME?: string;
-  PUBLIC_CLOUDINARY_API_KEY?: string;
-  SECRET_CLOUDINARY_API_KEY?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CF_ACCOUNT_ID?: string;
+  PUBLIC_MEDIA_BASE_URL?: string;
 }
 
 declare namespace App {

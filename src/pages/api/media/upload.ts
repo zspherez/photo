@@ -57,7 +57,15 @@ export const PUT: APIRoute = async ({ locals, request }) => {
   }
 
   const bucket = bucketName === "originals" ? env.ORIGINALS : env.MEDIA;
-  const FixedLengthStreamConstructor = globalThis.FixedLengthStream;
+  type FixedLengthStreamConstructor = new (length: number) => {
+    readable: ReadableStream;
+    writable: WritableStream;
+  };
+  const FixedLengthStreamConstructor = (
+    globalThis as unknown as {
+      FixedLengthStream?: FixedLengthStreamConstructor;
+    }
+  ).FixedLengthStream;
   let body: ReadableStream | ArrayBuffer;
   let streaming: Promise<void> | null = null;
   if (typeof FixedLengthStreamConstructor === "function") {

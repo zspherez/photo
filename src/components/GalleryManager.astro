@@ -1,0 +1,709 @@
+---
+import { MANAGEABLE_GALLERIES } from "../lib/gallery-admin";
+
+const galleryLabels: Record<string, string> = {
+  concerts: "Concerts",
+  music: "Music",
+  grads: "Graduations",
+  sports: "Sports",
+  events: "Events",
+  bts: "BTS / Portrait",
+  lifestyle: "Lifestyle",
+  video: "Video",
+  system: "Site images",
+};
+---
+
+<section id="gallery-manager" class="mt-6">
+  <div
+    id="gallery-status"
+    role="status"
+    class="mb-4 hidden rounded-lg border px-4 py-3 text-sm"
+  ></div>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-neutral-800 bg-neutral-950/50 p-3">
+    <div>
+      <p class="text-sm font-semibold">Staged publishing</p>
+      <p id="draft-status" class="mt-1 text-xs text-neutral-400">
+        Loading gallery draft…
+      </p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button
+        id="reset-gallery-draft"
+        type="button"
+        class="rounded border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-800"
+      >
+        Discard staged changes
+      </button>
+      <button
+        id="publish-gallery-draft"
+        type="button"
+        class="rounded bg-indigo-500 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-50"
+      >
+        Publish
+      </button>
+    </div>
+  </div>
+
+  <nav class="mt-5 flex gap-2 overflow-x-auto pb-2" aria-label="Galleries">
+    {
+      MANAGEABLE_GALLERIES.map((gallery, index) => (
+        <button
+          type="button"
+          data-gallery-tab={gallery}
+          class={`shrink-0 rounded-full border px-3 py-1.5 text-sm ${
+            index === 0
+              ? "border-white bg-white text-black"
+              : "border-neutral-700 hover:border-neutral-500"
+          }`}
+        >
+          {galleryLabels[gallery]}
+        </button>
+      ))
+    }
+  </nav>
+
+  <div
+    id="image-upload-panel"
+    class="mt-4 rounded-lg border border-dashed border-neutral-700 bg-neutral-950/40 p-5"
+  >
+    <h2 class="font-semibold">Add images</h2>
+    <p class="mt-1 text-sm text-neutral-400">
+      Drag images here or choose files. Responsive WebP variants are generated
+      in your browser before uploading.
+    </p>
+    <label
+      id="image-drop-zone"
+      class="mt-4 flex min-h-32 cursor-pointer items-center justify-center rounded-lg border border-neutral-700 px-4 text-center text-sm text-neutral-300 hover:bg-neutral-900"
+    >
+      Drop images or click to choose
+      <input
+        id="image-upload-input"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/avif"
+        multiple
+        class="sr-only"
+      />
+    </label>
+  </div>
+
+  <div
+    id="video-upload-panel"
+    class="mt-4 hidden rounded-lg border border-dashed border-neutral-700 bg-neutral-950/40 p-5"
+  >
+    <h2 class="font-semibold">Add video</h2>
+    <p class="mt-1 text-sm text-neutral-400">
+      Choose an MP4 and its poster image. The poster is converted to WebP.
+    </p>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      <label class="text-sm">
+        <span class="block text-neutral-400">MP4 video</span>
+        <input
+          id="video-upload-input"
+          type="file"
+          accept="video/mp4"
+          class="mt-1 block w-full rounded border border-neutral-700 bg-neutral-950 p-2"
+        />
+      </label>
+      <label class="text-sm">
+        <span class="block text-neutral-400">Poster image</span>
+        <input
+          id="video-poster-input"
+          type="file"
+          accept="image/*"
+          class="mt-1 block w-full rounded border border-neutral-700 bg-neutral-950 p-2"
+        />
+      </label>
+    </div>
+    <button
+      id="upload-video"
+      type="button"
+      class="mt-4 rounded bg-slate-100 px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-white"
+    >
+      Stage video
+    </button>
+  </div>
+
+  <div
+    id="system-help"
+    class="mt-4 hidden rounded-lg border border-neutral-800 bg-neutral-950/40 p-4 text-sm text-neutral-400"
+  >
+    Replace the existing profile, social-sharing, or logo image below. New
+    system-image slots cannot be added.
+  </div>
+
+  <div class="mt-6 flex items-center justify-between">
+    <h2 id="gallery-heading" class="text-lg font-semibold">Concerts</h2>
+    <span id="gallery-count" class="text-sm text-neutral-400"></span>
+  </div>
+  <div
+    id="gallery-assets"
+    class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+  ></div>
+
+  <input
+    id="replace-asset-input"
+    type="file"
+    class="sr-only"
+  />
+  <input
+    id="replace-poster-input"
+    type="file"
+    accept="image/*"
+    class="sr-only"
+  />
+</section>
+
+<script is:inline define:vars={{ galleryLabels, manageableGalleries: MANAGEABLE_GALLERIES }}>
+  const MEDIA_BASE_URL = "https://media.rehders.photos";
+  const IMAGE_WIDTHS = [320, 480, 640, 960, 1280, 1920];
+  const state = {
+    draft: null,
+    gallery: manageableGalleries[0],
+    publishConfigured: false,
+    busy: false,
+    replacement: null,
+  };
+
+  const element = (id) => document.getElementById(id);
+  const statusElement = element("gallery-status");
+  const assetsElement = element("gallery-assets");
+  const headingElement = element("gallery-heading");
+  const countElement = element("gallery-count");
+  const draftStatusElement = element("draft-status");
+  const publishButton = element("publish-gallery-draft");
+  const imagePanel = element("image-upload-panel");
+  const videoPanel = element("video-upload-panel");
+  const systemHelp = element("system-help");
+  const replaceInput = element("replace-asset-input");
+  const replacePosterInput = element("replace-poster-input");
+
+  function showStatus(message, tone = "info") {
+    statusElement.textContent = message;
+    statusElement.className =
+      "mb-4 rounded-lg border px-4 py-3 text-sm " +
+      (tone === "error"
+        ? "border-red-800 bg-red-950/40 text-red-200"
+        : tone === "success"
+          ? "border-emerald-800 bg-emerald-950/40 text-emerald-200"
+          : "border-blue-800 bg-blue-950/40 text-blue-200");
+  }
+
+  function clearStatus() {
+    statusElement.className = "mb-4 hidden rounded-lg border px-4 py-3 text-sm";
+    statusElement.textContent = "";
+  }
+
+  function encodedKey(key) {
+    return key.split("/").map(encodeURIComponent).join("/");
+  }
+
+  function mediaUrl(key) {
+    return `${MEDIA_BASE_URL}/${encodedKey(key)}`;
+  }
+
+  function imageUrl(key, preset) {
+    return mediaUrl(`variants/${preset}/${key.replace(/\.[^./]+$/, ".webp")}`);
+  }
+
+  function logicalName(value) {
+    return value.replace(/_[a-z0-9]{6}$/i, "");
+  }
+
+  function systemPreset(asset) {
+    if (asset.publicId === "social") return "w-1600";
+    if (logicalName(asset.publicId) === "logo") return "w-192";
+    return "w-960";
+  }
+
+  function previewUrl(asset) {
+    if (asset.type === "video") {
+      return asset.posterKey ? mediaUrl(asset.posterKey) : "";
+    }
+    return imageUrl(
+      asset.key,
+      state.gallery === "system" ? systemPreset(asset) : "w-480",
+    );
+  }
+
+  function updatePanels() {
+    imagePanel.classList.toggle(
+      "hidden",
+      state.gallery === "video" || state.gallery === "system",
+    );
+    videoPanel.classList.toggle("hidden", state.gallery !== "video");
+    systemHelp.classList.toggle("hidden", state.gallery !== "system");
+    headingElement.textContent = galleryLabels[state.gallery];
+  }
+
+  function setBusy(value, message) {
+    state.busy = value;
+    publishButton.disabled = value || !state.publishConfigured;
+    if (message) draftStatusElement.textContent = message;
+  }
+
+  async function api(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: {
+        ...(options.body && !(options.body instanceof Blob)
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+    return data;
+  }
+
+  async function loadDraft(preserveStatus = false) {
+    if (!preserveStatus) clearStatus();
+    setBusy(true, "Loading gallery draft…");
+    try {
+      const data = await api("/api/media/manage");
+      state.draft = data.draft;
+      state.publishConfigured = data.publishConfigured;
+      render();
+      draftStatusElement.textContent = state.publishConfigured
+        ? `Staged draft updated ${new Date(state.draft.updatedAt).toLocaleString()}`
+        : "Uploads can be staged, but publishing needs GALLERY_GITHUB_TOKEN.";
+    } catch (error) {
+      showStatus(String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function mutate(payload) {
+    setBusy(true, "Saving staged changes…");
+    try {
+      const data = await api("/api/media/manage", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      state.draft = data.draft;
+      render();
+      draftStatusElement.textContent = `Staged draft updated ${new Date(state.draft.updatedAt).toLocaleString()}`;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function render() {
+    updatePanels();
+    const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
+    countElement.textContent = `${assets.length} asset${assets.length === 1 ? "" : "s"}`;
+    assetsElement.innerHTML = "";
+    assets.forEach((asset, index) => {
+      const card = document.createElement("article");
+      card.className =
+        "overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950/50";
+      const image = document.createElement("img");
+      image.src = previewUrl(asset);
+      image.alt = asset.alt || asset.publicId;
+      image.className = "aspect-video w-full bg-black object-contain";
+      card.append(image);
+
+      const content = document.createElement("div");
+      content.className = "p-3";
+      const name = document.createElement("p");
+      name.className = "truncate text-sm font-semibold";
+      name.textContent = asset.publicId;
+      content.append(name);
+
+      const details = document.createElement("p");
+      details.className = "mt-1 text-xs text-neutral-500";
+      details.textContent = `${asset.width}×${asset.height}${asset.type === "video" ? ` · ${Math.round(asset.duration || 0)}s` : ""}`;
+      content.append(details);
+
+      const actions = document.createElement("div");
+      actions.className = "mt-3 flex flex-wrap gap-2";
+      actions.innerHTML = `
+        <button type="button" data-action="up" class="rounded border border-neutral-700 px-2 py-1 text-xs disabled:opacity-30" ${index === 0 ? "disabled" : ""}>↑</button>
+        <button type="button" data-action="down" class="rounded border border-neutral-700 px-2 py-1 text-xs disabled:opacity-30" ${index === assets.length - 1 ? "disabled" : ""}>↓</button>
+        <button type="button" data-action="replace" class="rounded border border-neutral-700 px-2 py-1 text-xs">Replace</button>
+        ${asset.type === "video" ? '<button type="button" data-action="poster" class="rounded border border-neutral-700 px-2 py-1 text-xs">Poster</button>' : ""}
+        ${state.gallery === "system" ? "" : '<button type="button" data-action="delete" class="rounded border border-red-900 px-2 py-1 text-xs text-red-300">Delete</button>'}
+      `;
+      actions.addEventListener("click", (event) =>
+        handleCardAction(event, asset, index),
+      );
+      content.append(actions);
+      card.append(content);
+      assetsElement.append(card);
+    });
+  }
+
+  async function handleCardAction(event, asset, index) {
+    const button = event.target.closest("button[data-action]");
+    if (!button || state.busy) return;
+    const action = button.dataset.action;
+    const assets = [...state.draft.manifest.folders[state.gallery]];
+    if (action === "up" || action === "down") {
+      const target = action === "up" ? index - 1 : index + 1;
+      [assets[index], assets[target]] = [assets[target], assets[index]];
+      await mutate({
+        action: "reorder",
+        folder: state.gallery,
+        order: assets.map((item) => item.publicId),
+      });
+      return;
+    }
+    if (action === "delete") {
+      if (!confirm(`Remove ${asset.publicId} from ${galleryLabels[state.gallery]}? The uploaded files are retained for rollback.`)) return;
+      await mutate({
+        action: "delete",
+        folder: state.gallery,
+        publicId: asset.publicId,
+      });
+      return;
+    }
+    state.replacement = asset;
+    if (action === "poster") {
+      replacePosterInput.value = "";
+      replacePosterInput.click();
+      return;
+    }
+    replaceInput.accept =
+      asset.type === "video" ? "video/mp4" : "image/*";
+    replaceInput.value = "";
+    replaceInput.click();
+  }
+
+  function slug(value) {
+    return value
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 180) || "media";
+  }
+
+  function randomSuffix() {
+    return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  }
+
+  function extension(file) {
+    const match = file.name.toLowerCase().match(/\.[a-z0-9]+$/);
+    return match?.[0] === ".jpeg" ? ".jpg" : match?.[0] || ".bin";
+  }
+
+  async function uploadBlob(bucket, key, blob) {
+    const response = await fetch("/api/media/upload", {
+      method: "PUT",
+      headers: {
+        "Content-Type": blob.type || "application/octet-stream",
+        "X-Media-Bucket": bucket,
+        "X-Media-Key": key,
+      },
+      body: blob,
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `Upload failed (${response.status})`);
+  }
+
+  async function imageBitmap(file) {
+    return createImageBitmap(file, { imageOrientation: "from-image" });
+  }
+
+  async function resizedWebp(bitmap, width, height) {
+    const scale = Math.min(
+      1,
+      width / bitmap.width,
+      height ? height / bitmap.height : 1,
+    );
+    const outputWidth = Math.max(1, Math.round(bitmap.width * scale));
+    const outputHeight = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = outputWidth;
+    canvas.height = outputHeight;
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, outputWidth, outputHeight);
+    return new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("Image conversion failed"))),
+        "image/webp",
+        0.82,
+      ),
+    );
+  }
+
+  function imageVariants(folder, publicId) {
+    if (folder === "system") {
+      if (publicId === "social") return [{ preset: "w-1600", width: 1600 }];
+      if (logicalName(publicId) === "logo") return [{ preset: "w-192", width: 192 }];
+      return [{ preset: "w-960", width: 960 }];
+    }
+    return [
+      ...IMAGE_WIDTHS.map((width) => ({ preset: `w-${width}`, width })),
+      { preset: "fullscreen", width: 2560, height: 1600 },
+    ];
+  }
+
+  function variantKey(preset, key) {
+    return `variants/${preset}/${key.replace(/\.[^./]+$/, ".webp")}`;
+  }
+
+  async function stageImage(file, replacing = null) {
+    const publicId = replacing?.publicId || `${slug(file.name)}_${randomSuffix().slice(0, 6)}`;
+    const key = `images/${state.gallery}/${publicId}-${randomSuffix()}${extension(file)}`;
+    const bitmap = await imageBitmap(file);
+    try {
+      await uploadBlob("originals", key, file);
+      for (const variant of imageVariants(state.gallery, publicId)) {
+        const blob = await resizedWebp(
+          bitmap,
+          variant.width,
+          variant.height,
+        );
+        await uploadBlob("media", variantKey(variant.preset, key), blob);
+      }
+      await mutate({
+        action: "upsert",
+        folder: state.gallery,
+        replacePublicId: replacing?.publicId || undefined,
+        asset: {
+          publicId,
+          key,
+          width: bitmap.width,
+          height: bitmap.height,
+          aspectRatio: bitmap.width / bitmap.height,
+          alt: replacing?.alt || "",
+          type: "image",
+        },
+      });
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  async function videoMetadata(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.src = url;
+      await new Promise((resolve, reject) => {
+        video.onloadedmetadata = resolve;
+        video.onerror = () => reject(new Error("Could not read video metadata"));
+      });
+      return {
+        width: video.videoWidth,
+        height: video.videoHeight,
+        duration: video.duration,
+      };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  async function uploadPoster(file, publicId) {
+    const bitmap = await imageBitmap(file);
+    try {
+      const blob = await resizedWebp(bitmap, 1000);
+      const key = `posters/${publicId}-${randomSuffix()}.webp`;
+      await uploadBlob("media", key, blob);
+      return key;
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  async function stageVideo(file, posterFile, replacing = null) {
+    const publicId = replacing?.publicId || `${slug(file.name)}_${randomSuffix().slice(0, 6)}`;
+    const key = `videos/${publicId}-${randomSuffix()}.mp4`;
+    const metadata = await videoMetadata(file);
+    if (
+      !Number.isFinite(metadata.width) ||
+      metadata.width <= 0 ||
+      !Number.isFinite(metadata.height) ||
+      metadata.height <= 0 ||
+      !Number.isFinite(metadata.duration) ||
+      metadata.duration <= 0
+    ) {
+      throw new Error("The video metadata is invalid");
+    }
+    await uploadBlob("media", key, file);
+    const posterKey = posterFile
+      ? await uploadPoster(posterFile, publicId)
+      : replacing?.posterKey;
+    if (!posterKey) throw new Error("A poster image is required for a new video");
+    await mutate({
+      action: "upsert",
+      folder: "video",
+      replacePublicId: replacing?.publicId || undefined,
+      asset: {
+        publicId,
+        key,
+        width: metadata.width,
+        height: metadata.height,
+        aspectRatio: metadata.width / metadata.height,
+        alt: replacing?.alt || "",
+        type: "video",
+        duration: metadata.duration,
+        posterKey,
+      },
+    });
+  }
+
+  async function stagePoster(file, asset) {
+    const posterKey = await uploadPoster(file, asset.publicId);
+    await mutate({
+      action: "upsert",
+      folder: "video",
+      replacePublicId: asset.publicId,
+      asset: { ...asset, posterKey },
+    });
+  }
+
+  async function processImages(files, replacement = null) {
+    clearStatus();
+    setBusy(true, "Processing and uploading images…");
+    try {
+      for (const file of files) {
+        await stageImage(file, replacement);
+        replacement = null;
+      }
+      showStatus("Images staged. Review the order, then Publish.", "success");
+    } catch (error) {
+      showStatus(String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  document.querySelectorAll("[data-gallery-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.gallery = button.dataset.galleryTab;
+      document.querySelectorAll("[data-gallery-tab]").forEach((tab) => {
+        const active = tab === button;
+        tab.className = `shrink-0 rounded-full border px-3 py-1.5 text-sm ${
+          active
+            ? "border-white bg-white text-black"
+            : "border-neutral-700 hover:border-neutral-500"
+        }`;
+      });
+      render();
+    });
+  });
+
+  const imageInput = element("image-upload-input");
+  imageInput.addEventListener("change", () =>
+    processImages([...imageInput.files]),
+  );
+  const dropZone = element("image-drop-zone");
+  dropZone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropZone.classList.add("border-white");
+  });
+  dropZone.addEventListener("dragleave", () =>
+    dropZone.classList.remove("border-white"),
+  );
+  dropZone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    dropZone.classList.remove("border-white");
+    processImages(
+      [...event.dataTransfer.files].filter((file) =>
+        file.type.startsWith("image/"),
+      ),
+    );
+  });
+
+  replaceInput.addEventListener("change", async () => {
+    const file = replaceInput.files?.[0];
+    const replacement = state.replacement;
+    state.replacement = null;
+    if (!file || !replacement) return;
+    if (replacement.type === "video") {
+      setBusy(true, "Uploading replacement video…");
+      try {
+        await stageVideo(file, null, replacement);
+        showStatus("Replacement video staged.", "success");
+      } catch (error) {
+        showStatus(String(error), "error");
+      } finally {
+        setBusy(false);
+      }
+    } else {
+      await processImages([file], replacement);
+    }
+  });
+
+  replacePosterInput.addEventListener("change", async () => {
+    const file = replacePosterInput.files?.[0];
+    const replacement = state.replacement;
+    state.replacement = null;
+    if (!file || !replacement) return;
+    setBusy(true, "Uploading replacement poster…");
+    try {
+      await stagePoster(file, replacement);
+      showStatus("Replacement poster staged.", "success");
+    } catch (error) {
+      showStatus(String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  element("upload-video").addEventListener("click", async () => {
+    const file = element("video-upload-input").files?.[0];
+    const poster = element("video-poster-input").files?.[0];
+    if (!file || !poster) {
+      showStatus("Choose both an MP4 and a poster image.", "error");
+      return;
+    }
+    setBusy(true, "Uploading video and poster…");
+    try {
+      await stageVideo(file, poster);
+      element("video-upload-input").value = "";
+      element("video-poster-input").value = "";
+      showStatus("Video staged. Review the order, then Publish.", "success");
+    } catch (error) {
+      showStatus(String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  element("reset-gallery-draft").addEventListener("click", async () => {
+    if (!confirm("Discard every staged gallery change and reload the published manifest?")) return;
+    setBusy(true, "Discarding staged changes…");
+    try {
+      const data = await api("/api/media/manage", {
+        method: "POST",
+        body: JSON.stringify({ action: "reset" }),
+      });
+      state.draft = data.draft;
+      render();
+      showStatus("Staged changes discarded.", "success");
+    } catch (error) {
+      showStatus(String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  publishButton.addEventListener("click", async () => {
+    if (!confirm("Publish these staged gallery changes to the live repository?")) return;
+    setBusy(true, "Publishing manifest to GitHub…");
+    try {
+      const data = await api("/api/media/manage", {
+        method: "POST",
+        body: JSON.stringify({ action: "publish" }),
+      });
+      showStatus(
+        `Published commit ${data.commitSha.slice(0, 8)}. Cloudflare and GitHub Pages are deploying.`,
+        "success",
+      );
+      await loadDraft(true);
+    } catch (error) {
+      showStatus(String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  loadDraft();
+</script>

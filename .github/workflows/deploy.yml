@@ -21,13 +21,6 @@ jobs:
       - name: Checkout your repository using git
         uses: actions/checkout@v4
       - name: Install, build, and upload your site
-        env:
-          # Build-time read of print metadata from Cloudflare D1 (so the mirror's
-          # /prints gallery shows the same prices/descriptions). Optional: if
-          # unset, the gallery still builds (without DB metadata).
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
-          CF_D1_API_TOKEN: ${{ secrets.CF_D1_API_TOKEN }}
         uses: withastro/action@v2
         # with:
           # path: . # The root location of your Astro project inside the repository. (optional)

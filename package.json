@@ -9,8 +9,6 @@
     "build": "astro build",
     "preview": "wrangler pages dev dist",
     "media:publish": "node scripts/publish-media.mjs",
-    "db:migrate": "wrangler d1 migrations apply prints --remote",
-    "db:migrate:local": "wrangler d1 migrations apply prints --local",
     "astro": "astro",
     "typecheck": "astro check",
     "format:check": "prettier --check ."

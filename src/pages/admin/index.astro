@@ -1,284 +1,46 @@
 ---
 import Layout from "../../layouts/Layout.astro";
+import GalleryManager from "../../components/GalleryManager.astro";
 import { verifyAccess } from "../../lib/auth";
-import { buildImageUrl, getMediaFolder } from "../../lib/media";
-import {
-  fetchPrintsViaD1,
-  humanizePublicId,
-  type PrintInfo,
-} from "../../lib/prints";
-import { calculateSizesMatchingAspectRatio, maxPrintSizeLabel } from "../../lib/print-sizes";
 
-// On-demand (SSR) route — runs on the Cloudflare deploy. On the static GitHub
-// Pages mirror there is no worker, so this page 404s there (intended).
 export const prerender = false;
 
-const folder = "prints";
-const runtime = (Astro.locals as any)?.runtime?.env as CloudflareEnv | undefined;
-
-interface Card {
-  publicId: string;
-  thumb: string;
-  current: PrintInfo;
-  placeholderTitle: string;
-  /** Aspect-ratio-matched sizes; savedPrice overrides the STANDARD_SIZES default. */
-  aspectSizes: Array<{ label: string; defaultPrice: string; savedPrice: string }>;
-  maxSize: string | null;
-  category: string;
-}
-
-let available = false;
+const runtime = (Astro.locals as any)?.runtime?.env as
+  | CloudflareEnv
+  | undefined;
+let available = Boolean(runtime?.ORIGINALS && runtime?.MEDIA);
 let authed = false;
 let errorMessage = "";
-let cards: Card[] = [];
 
-if (runtime?.DB) {
-  available = true;
+if (available && runtime) {
   try {
-    const user = await verifyAccess(Astro.request, runtime as any);
-    authed = Boolean(user);
-
-    if (authed) {
-      const [resources, metadata] = await Promise.all([
-        Promise.resolve(getMediaFolder(folder).filter((asset) => asset.type === "image")),
-        fetchPrintsViaD1(runtime.DB),
-      ]);
-
-      cards = resources.map((r) => {
-          const thumb = buildImageUrl(r.key, "print-w-480");
-          const dbInfo     = metadata[r.publicId];
-          const dbPriceMap = new Map((dbInfo?.sizes ?? []).map(s => [s.label, s.price]));
-          const matchedSpecs = calculateSizesMatchingAspectRatio(r.width, r.height);
-          return {
-            publicId: r.publicId,
-            thumb,
-            current: dbInfo ?? {},
-            placeholderTitle: humanizePublicId(r.publicId),
-            aspectSizes: matchedSpecs.map(spec => ({
-              label: spec.label,
-              defaultPrice: spec.defaultPrice,
-              savedPrice: dbPriceMap.get(spec.label) ?? "",
-            })),
-            maxSize: maxPrintSizeLabel(r.width, r.height),
-            category: dbInfo?.category ?? "",
-          };
-        });
-    }
-  } catch (err) {
-    errorMessage = (err as Error).message;
+    authed = Boolean(await verifyAccess(Astro.request, runtime as any));
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : String(error);
   }
 }
 ---
 
-<Layout title="Print Dashboard" description="Manage print pricing and descriptions." hidden={true}>
-  <script is:inline>
-    async function savePrint(event, form) {
-      event.preventDefault();
-      const status = form.querySelector(".status");
-      status.textContent = "Saving…";
-      status.className = "status text-sm text-neutral-400";
-
-      const field = (name) => form.elements.namedItem(name)?.value ?? "";
-
-      const sizes = [];
-      for (const input of form.querySelectorAll('[name^="size__"]')) {
-        if (input.value.trim()) {
-          const label = decodeURIComponent(input.name.replace("size__", ""));
-          sizes.push({ label, price: input.value.trim() });
-        }
-      }
-
-      const payload = {
-        public_id: form.dataset.publicId,
-        title: field("title"),
-        description: field("description"),
-        price: null,
-        sizes,
-        category: field("category") || null,
-      };
-
-      try {
-        const res = await fetch("/api/prints", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          status.textContent = "Saved ✓";
-          status.className = "status text-sm text-green-400";
-        } else {
-          status.textContent = data.error || "Error";
-          status.className = "status text-sm text-red-400";
-        }
-      } catch (err) {
-        status.textContent = String(err);
-        status.className = "status text-sm text-red-400";
-      }
-      return false;
-    }
-
-    window.savePrint = savePrint;
-    window.publishSite = publishSite;
-
-    async function publishSite(btn) {
-      const status = document.getElementById("publish-status");
-      btn.disabled = true;
-      btn.textContent = "Publishing…";
-      status.textContent = "";
-      try {
-        const res = await fetch("/api/deploy", { method: "POST" });
-        const data = await res.json();
-        if (res.ok) {
-          btn.textContent = "Publish to gallery";
-          status.textContent = "✓ Deploy triggered — gallery will update in ~1 min.";
-          status.className = "text-sm text-green-400";
-        } else {
-          btn.textContent = "Publish to gallery";
-          status.textContent = data.error || "Deploy failed";
-          status.className = "text-sm text-red-400";
-        }
-      } catch (err) {
-        btn.textContent = "Publish to gallery";
-        status.textContent = String(err);
-        status.className = "text-sm text-red-400";
-      }
-      btn.disabled = false;
-    }
-  </script>
-
-  <main class="mx-auto max-w-5xl px-4 py-10">
-    <h1 class="text-2xl font-semibold">Print Dashboard</h1>
-
+<Layout
+  title="Gallery Manager"
+  description="Manage portfolio galleries."
+  hidden={true}
+>
+  <main class="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+    <h1 class="text-2xl font-semibold">Gallery Manager</h1>
     {!available && (
-      <p class="mt-4 text-neutral-400">
-        The print dashboard is only available on the canonical site
-        (<a class="underline" href="https://rehders.photos/admin/">rehders.photos/admin</a>).
+      <p class="mt-4 text-amber-300">
+        Gallery R2 bindings are not configured on this deployment.
       </p>
     )}
-
     {available && !authed && (
       <p class="mt-4 text-red-400">
-        Not authenticated. This page must be reached through Cloudflare Access.
-        {errorMessage && <span class="block text-neutral-500">{errorMessage}</span>}
+        Not authenticated. Open this page through Cloudflare Access.
+        {errorMessage && (
+          <span class="mt-1 block text-neutral-500">{errorMessage}</span>
+        )}
       </p>
     )}
-
-    {available && authed && (
-      <>
-        <p class="mt-2 text-sm text-neutral-400">
-          Edit each print's title, description and pricing. Changes save to the
-          database immediately; the public gallery updates on the next site build.
-        </p>
-        {errorMessage && <p class="mt-2 text-red-400">{errorMessage}</p>}
-        {cards.length === 0 && (
-          <p class="mt-6 text-neutral-400">
-            No images found in the <code>{folder}</code> media manifest.
-          </p>
-        )}
-
-        <div class="mt-6 flex items-center gap-4 border-b border-neutral-800 pb-6">
-          <button
-            type="button"
-            onclick="publishSite(this)"
-            class="rounded bg-indigo-500 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
-          >
-            Publish to gallery
-          </button>
-          <span id="publish-status" class="text-sm text-neutral-400">
-            Saves are instant. Publishing rebuilds the public gallery (~1 min).
-          </span>
-        </div>
-
-        <div class="mt-8 space-y-6">
-          {cards.map((card) => (
-            <form
-              class="print-card grid grid-cols-1 gap-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4 md:grid-cols-[180px_1fr]"
-              data-public-id={card.publicId}
-              onsubmit="return savePrint(event, this)"
-            >
-              <div>
-                <img
-                  src={card.thumb}
-                  alt={card.placeholderTitle}
-                  class="w-full rounded object-cover"
-                  draggable="false"
-                />
-                <p class="mt-2 break-all text-xs text-neutral-500">{card.publicId}</p>
-                {card.maxSize && (
-                  <p class="mt-1 text-xs text-indigo-400">Max quality print: {card.maxSize}</p>
-                )}
-              </div>
-
-              <div class="space-y-3">
-                <label class="block">
-                  <span class="text-xs uppercase tracking-wide text-neutral-400">Title</span>
-                  <input
-                    name="title"
-                    type="text"
-                    value={card.current.title ?? ""}
-                    placeholder={card.placeholderTitle}
-                    class="mt-1 w-full rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
-                  />
-                </label>
-
-                <label class="block">
-                  <span class="text-xs uppercase tracking-wide text-neutral-400">Description</span>
-                  <textarea
-                    name="description"
-                    rows="2"
-                    class="mt-1 w-full rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
-                  >{card.current.description ?? ""}</textarea>
-                </label>
-
-                <label class="block">
-                  <span class="text-xs uppercase tracking-wide text-neutral-400">Category</span>
-                  <select
-                    name="category"
-                    class="mt-1 rounded border border-neutral-700 bg-white px-3 py-2 text-sm text-neutral-900"
-                  >
-                    <option value="" selected={card.category === ""}>— Uncategorized —</option>
-                    <option value="concert" selected={card.category === "concert"}>Concert</option>
-                    <option value="knicks" selected={card.category === "knicks"}>Knicks</option>
-                    <option value="landscape" selected={card.category === "landscape"}>Landscape</option>
-                  </select>
-                </label>
-
-                <div class="space-y-2">
-                  <span class="text-xs uppercase tracking-wide text-neutral-400">
-                    Prices by size (leave blank to use defaults)
-                  </span>
-                  {card.aspectSizes.length === 0 && (
-                    <p class="text-xs text-neutral-500">No standard sizes match this photo's aspect ratio.</p>
-                  )}
-                  {card.aspectSizes.map(size => (
-                    <div class="flex items-center gap-3">
-                      <span class="w-20 shrink-0 text-sm text-neutral-300">{size.label}</span>
-                      <input
-                        name={`size__${size.label}`}
-                        type="text"
-                        value={size.savedPrice}
-                        placeholder={size.defaultPrice}
-                        class="w-28 rounded border border-neutral-700 bg-white px-2 py-1 text-sm text-neutral-900 placeholder:text-neutral-400"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div class="flex items-center gap-3">
-                  <button
-                    type="submit"
-                    class="rounded bg-slate-100 px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-white"
-                  >
-                    Save
-                  </button>
-                  <span class="status text-sm text-neutral-400"></span>
-                </div>
-              </div>
-            </form>
-          ))}
-        </div>
-      </>
-    )}
+    {available && authed && <GalleryManager />}
   </main>
 </Layout>

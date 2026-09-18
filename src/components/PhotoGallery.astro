@@ -71,50 +71,81 @@ eagerCandidates.forEach((resource, i) => {
     portraitIndex = i;
   }
 });
+
+interface GalleryItem {
+  resource: MediaAsset;
+  index: number;
+}
+
+const mobileRows: GalleryItem[][] = [];
+let pendingPortraits: GalleryItem[] = [];
+const flushPortraits = () => {
+  if (pendingPortraits.length) {
+    mobileRows.push(pendingPortraits);
+    pendingPortraits = [];
+  }
+};
+
+filteredResources.forEach((resource, index) => {
+  const item = { resource, index };
+  if (resourceRatio(resource) < 1) {
+    pendingPortraits.push(item);
+    if (pendingPortraits.length === 2) flushPortraits();
+    return;
+  }
+  flushPortraits();
+  mobileRows.push([item]);
+});
+flushPortraits();
 ---
 
 <div class="flex flex-wrap m-0.5" data-gallery-count={filteredResources.length}>
 
-  {filteredResources.map((resource, index) => {
-    const isEager = index < EAGER_COUNT;
-    const isPriority = index === landscapeIndex || index === portraitIndex;
-    const srcset = BREAKPOINTS.map(
-      (width) => `${buildImageUrl(resource.key, `w-${width}`)} ${width}w`,
-    ).join(", ");
+  {mobileRows.map((row) => (
+    <div class="flex w-full sm:contents">
+      {row.map(({ resource, index }) => {
+        const isEager = index < EAGER_COUNT;
+        const isPriority = index === landscapeIndex || index === portraitIndex;
+        const srcset = BREAKPOINTS.map(
+          (width) => `${buildImageUrl(resource.key, `w-${width}`)} ${width}w`,
+        ).join(", ");
 
-    return (
-      <div
-        data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
-        data-public-id={resource.publicId}
-        data-fullscreen-url={buildImageUrl(resource.key, "fullscreen")}
-        data-width={resource.width}
-        data-height={resource.height}
-        data-alt={resource.alt}
-        tabindex="0"
-        role="button"
-        aria-label={`View photo ${index + 1} of ${filteredResources.length}`}
-        onclick="setFullscreen(this)"
-        class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto max-w-[calc(50%-4px)] sm:max-w-none"
-        style={`flex-grow: ${resource.width * 350 / resource.height}; flex-basis: ${resource.width * 350 / resource.height}px;`}
-      >
+        return (
+          <div
+            data-gallery-tile
+            data-position={`${index == 0 ? "first" : index + 1 == filteredResources.length ? "last" : "middle"}`}
+            data-public-id={resource.publicId}
+            data-fullscreen-url={buildImageUrl(resource.key, "fullscreen")}
+            data-width={resource.width}
+            data-height={resource.height}
+            data-alt={resource.alt}
+            tabindex="0"
+            role="button"
+            aria-label={`View photo ${index + 1} of ${filteredResources.length}`}
+            onclick="setFullscreen(this)"
+            class="relative m-0.5 cursor-zoom-in fullscreen:cursor-auto"
+            style={`flex-grow: ${resource.width * 350 / resource.height}; flex-basis: ${resource.width * 350 / resource.height}px;`}
+          >
 
-        <!-- placeholder for proper grid sizing -->
-        <div class="block" style={`padding-bottom: ${resource.height / resource.width * 100}%`}></div>
+            <!-- placeholder for proper grid sizing -->
+            <div class="block" style={`padding-bottom: ${resource.height / resource.width * 100}%`}></div>
 
-        <img
-          src={buildImageUrl(resource.key, "w-960")}
-          srcset={srcset}
-          width={resource.width}
-          height={resource.height}
-          alt={resource.alt}
-          sizes={getSizes(resource)}
-          class={`resource absolute align-bottom top-0 w-full h-full object-cover fullscreen:pointer-events-none ${isEager ? "" : "opacity-0 transition-opacity ease-in duration-1000"}`}
-          loading={isEager ? "eager" : "lazy"}
-          fetchpriority={isPriority ? "high" : undefined}
-        />
-      </div>
-    );
-  })}
+            <img
+              src={buildImageUrl(resource.key, "w-960")}
+              srcset={srcset}
+              width={resource.width}
+              height={resource.height}
+              alt={resource.alt}
+              sizes={getSizes(resource)}
+              class={`resource absolute align-bottom top-0 w-full h-full object-cover fullscreen:pointer-events-none ${isEager ? "" : "opacity-0 transition-opacity ease-in duration-1000"}`}
+              loading={isEager ? "eager" : "lazy"}
+              fetchpriority={isPriority ? "high" : undefined}
+            />
+          </div>
+        );
+      })}
+    </div>
+  ))}
 
 </div>
 
@@ -390,12 +421,9 @@ eagerCandidates.forEach((resource, i) => {
       return;
     }
 
-    slideTo(
-      fullscreen.dataset.position == "first"
-        ? document.querySelector("[data-position='last']")
-        : fullscreen.previousElementSibling,
-      "prev"
-    );
+    const tiles = [...document.querySelectorAll("[data-gallery-tile]")];
+    const currentIndex = tiles.indexOf(fullscreen);
+    slideTo(tiles[(currentIndex - 1 + tiles.length) % tiles.length], "prev");
   }
 
   function nextResource() {
@@ -410,12 +438,9 @@ eagerCandidates.forEach((resource, i) => {
       return;
     }
 
-    slideTo(
-      fullscreen.dataset.position == "last"
-        ? document.querySelector("[data-position='first']")
-        : fullscreen.nextElementSibling,
-      "next"
-    );
+    const tiles = [...document.querySelectorAll("[data-gallery-tile]")];
+    const currentIndex = tiles.indexOf(fullscreen);
+    slideTo(tiles[(currentIndex + 1) % tiles.length], "next");
   }
 
 document.onkeydown = (event) => {

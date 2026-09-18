@@ -86,6 +86,25 @@ const galleryLabels: Record<string, string> = {
         class="sr-only"
       />
     </label>
+    <div
+      id="image-upload-progress"
+      class="mt-4 hidden rounded-lg border border-neutral-800 bg-neutral-950/70 p-3"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <div class="flex items-center justify-between gap-3 text-xs text-neutral-300">
+        <span id="image-upload-progress-text">Preparing uploads…</span>
+        <span id="image-upload-progress-percent">0%</span>
+      </div>
+      <div class="mt-2 h-2 overflow-hidden rounded-full bg-neutral-800">
+        <div
+          id="image-upload-progress-bar"
+          class="h-full w-0 rounded-full bg-indigo-400 transition-[width] duration-200"
+        ></div>
+      </div>
+    </div>
   </div>
 
   <div
@@ -188,6 +207,11 @@ const galleryLabels: Record<string, string> = {
   const systemHelp = element("system-help");
   const replaceInput = element("replace-asset-input");
   const replacePosterInput = element("replace-poster-input");
+  const imageProgress = element("image-upload-progress");
+  const imageProgressText = element("image-upload-progress-text");
+  const imageProgressPercent = element("image-upload-progress-percent");
+  const imageProgressBar = element("image-upload-progress-bar");
+  const IMAGE_UPLOAD_CONCURRENCY = 3;
 
   function showStatus(message, tone = "info") {
     statusElement.textContent = message;
@@ -203,6 +227,15 @@ const galleryLabels: Record<string, string> = {
   function clearStatus() {
     statusElement.className = "mb-4 hidden rounded-lg border px-4 py-3 text-sm";
     statusElement.textContent = "";
+  }
+
+  function updateImageProgress(completed, total, message) {
+    const percentage = total ? Math.round((completed / total) * 100) : 0;
+    imageProgress.classList.remove("hidden");
+    imageProgress.setAttribute("aria-valuenow", String(percentage));
+    imageProgressText.textContent = message;
+    imageProgressPercent.textContent = `${percentage}%`;
+    imageProgressBar.style.width = `${percentage}%`;
   }
 
   function encodedKey(key) {
@@ -461,23 +494,23 @@ const galleryLabels: Record<string, string> = {
     return `variants/${preset}/${key.replace(/\.[^./]+$/, ".webp")}`;
   }
 
-  async function stageImage(file, replacing = null) {
+  async function uploadImage(file, folder, replacing = null, onProgress = () => {}) {
     const publicId = replacing?.publicId || `${slug(file.name)}_${randomSuffix().slice(0, 6)}`;
-    const key = `images/${state.gallery}/${publicId}-${randomSuffix()}${extension(file)}`;
+    const key = `images/${folder}/${publicId}-${randomSuffix()}${extension(file)}`;
     const bitmap = await imageBitmap(file);
     try {
       await uploadBlob("originals", key, file);
-      for (const variant of imageVariants(state.gallery, publicId)) {
+      onProgress(file, "original");
+      for (const variant of imageVariants(folder, publicId)) {
         const blob = await resizedWebp(
           bitmap,
           variant.width,
           variant.height,
         );
         await uploadBlob("media", variantKey(variant.preset, key), blob);
+        onProgress(file, variant.preset);
       }
-      await mutate({
-        action: "upsert",
-        folder: state.gallery,
+      return {
         replacePublicId: replacing?.publicId || undefined,
         asset: {
           publicId,
@@ -488,7 +521,7 @@ const galleryLabels: Record<string, string> = {
           alt: replacing?.alt || "",
           type: "image",
         },
-      });
+      };
     } finally {
       bitmap.close();
     }
@@ -574,16 +607,95 @@ const galleryLabels: Record<string, string> = {
   }
 
   async function processImages(files, replacement = null) {
+    if (!files.length) return;
     clearStatus();
+    if (files.length > 500) {
+      showStatus("Select no more than 500 images at a time.", "error");
+      return;
+    }
+    const folder = state.gallery;
+    const variantsPerImage = imageVariants(folder, "").length;
+    const totalSteps = files.length * (variantsPerImage + 1) + 1;
+    const uploaded = new Array(files.length);
+    let completedSteps = 0;
+    let completedFiles = 0;
+    let nextIndex = 0;
+    let uploadError = null;
+
+    const reportProgress = (file, phase) => {
+      completedSteps++;
+      updateImageProgress(
+        completedSteps,
+        totalSteps,
+        `Uploading ${file.name}: ${phase} · ${completedFiles}/${files.length} files complete`,
+      );
+    };
+
     setBusy(true, "Processing and uploading images…");
+    updateImageProgress(0, totalSteps, `Preparing ${files.length} image${files.length === 1 ? "" : "s"}…`);
     try {
-      for (const file of files) {
-        await stageImage(file, replacement);
-        replacement = null;
+      async function worker() {
+        while (!uploadError) {
+          const index = nextIndex++;
+          if (index >= files.length) return;
+          try {
+            uploaded[index] = await uploadImage(
+              files[index],
+              folder,
+              replacement && index === 0 ? replacement : null,
+              reportProgress,
+            );
+            completedFiles++;
+            updateImageProgress(
+              completedSteps,
+              totalSteps,
+              `${completedFiles}/${files.length} files uploaded.`,
+            );
+          } catch (error) {
+            uploadError = error;
+          }
+        }
       }
-      showStatus("Images staged. Review the order, then Publish.", "success");
+
+      const workerCount = replacement
+        ? 1
+        : Math.min(IMAGE_UPLOAD_CONCURRENCY, files.length);
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+      if (uploadError) throw uploadError;
+
+      updateImageProgress(
+        completedSteps,
+        totalSteps,
+        `Saving ${files.length} image${files.length === 1 ? "" : "s"} to the staged gallery…`,
+      );
+      if (replacement) {
+        await mutate({
+          action: "upsert",
+          folder,
+          replacePublicId: uploaded[0].replacePublicId,
+          asset: uploaded[0].asset,
+        });
+      } else {
+        await mutate({
+          action: "upsert-many",
+          folder,
+          assets: uploaded.map((item) => item.asset),
+        });
+      }
+      completedSteps++;
+      updateImageProgress(
+        completedSteps,
+        totalSteps,
+        `${files.length} image${files.length === 1 ? "" : "s"} staged successfully.`,
+      );
+      showStatus(`${files.length} image${files.length === 1 ? "" : "s"} staged. Review the order, then Publish.`, "success");
     } catch (error) {
       showStatus(String(error), "error");
+      updateImageProgress(
+        completedSteps,
+        totalSteps,
+        `Upload stopped after ${completedFiles}/${files.length} files.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -605,9 +717,10 @@ const galleryLabels: Record<string, string> = {
   });
 
   const imageInput = element("image-upload-input");
-  imageInput.addEventListener("change", () =>
-    processImages([...imageInput.files]),
-  );
+  imageInput.addEventListener("change", async () => {
+    await processImages([...imageInput.files]);
+    imageInput.value = "";
+  });
   const dropZone = element("image-drop-zone");
   dropZone.addEventListener("dragover", (event) => {
     event.preventDefault();

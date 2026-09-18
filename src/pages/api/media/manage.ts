@@ -102,6 +102,36 @@ export const POST: APIRoute = async ({ locals, request }) => {
         : next.length;
       next.splice(Math.min(insertionIndex, next.length), 0, asset);
       draft.manifest.folders[folder] = next;
+    } else if (action === "upsert-many") {
+      if (folder === "video" || folder === "system") {
+        return json(
+          { error: "Bulk image uploads are not supported for this gallery" },
+          400,
+        );
+      }
+      if (
+        !Array.isArray(body.assets) ||
+        body.assets.length === 0 ||
+        body.assets.length > 500
+      ) {
+        return json(
+          { error: "Bulk uploads must contain between 1 and 500 images" },
+          400,
+        );
+      }
+      const assets = body.assets.map(parseMediaAsset);
+      if (assets.some((asset) => asset.type !== "image")) {
+        return json({ error: "Bulk uploads must contain only images" }, 400);
+      }
+      const next = [...current];
+      for (const asset of assets) {
+        const existingIndex = next.findIndex(
+          (item) => item.publicId === asset.publicId,
+        );
+        if (existingIndex === -1) next.push(asset);
+        else next[existingIndex] = asset;
+      }
+      draft.manifest.folders[folder] = next;
     } else if (action === "delete") {
       const publicId =
         typeof body.publicId === "string" ? body.publicId.trim() : "";

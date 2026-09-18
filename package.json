@@ -9,6 +9,7 @@
     "build": "astro build",
     "preview": "wrangler pages dev dist",
     "media:publish": "node scripts/publish-media.mjs",
+    "photos:order": "node scripts/order-local-photos.mjs",
     "astro": "astro",
     "typecheck": "astro check",
     "format:check": "prettier --check ."

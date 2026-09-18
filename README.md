@@ -115,6 +115,19 @@ DASHBOARD_DEV_BYPASS=1
 
 Never configure `DASHBOARD_DEV_BYPASS` in production.
 
+### Local photo ordering helper
+
+Open a local-only drag-and-drop editor for any directory of photos:
+
+```sh
+npm run photos:order -- "/Users/joshrehders/Desktop/out"
+```
+
+The helper opens on `http://127.0.0.1:4174`. Drag photos into the desired
+order, review the proposed numbered filenames, then press **Commit filenames**
+to rename them as one collision-safe batch. It only listens on localhost and is
+not included in the production website.
+
 ### Emergency CLI fallback
 
 One-time local prerequisites:

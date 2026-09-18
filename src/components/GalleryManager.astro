@@ -152,10 +152,17 @@ const galleryLabels: Record<string, string> = {
     system-image slots cannot be added.
   </div>
 
-  <div class="mt-6 flex items-center justify-between">
+  <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
     <h2 id="gallery-heading" class="text-lg font-semibold">Concerts</h2>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center justify-end gap-3">
       <span id="gallery-count" class="text-sm text-neutral-400"></span>
+      <button
+        id="sort-gallery-by-filename"
+        type="button"
+        class="rounded border border-neutral-700 px-3 py-1.5 text-sm hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Sort by filename
+      </button>
       <button
         id="delete-all-gallery-assets"
         type="button"
@@ -199,6 +206,7 @@ const galleryLabels: Record<string, string> = {
   const assetsElement = element("gallery-assets");
   const headingElement = element("gallery-heading");
   const countElement = element("gallery-count");
+  const sortByFilenameButton = element("sort-gallery-by-filename");
   const deleteAllButton = element("delete-all-gallery-assets");
   const draftStatusElement = element("draft-status");
   const publishButton = element("publish-gallery-draft");
@@ -284,6 +292,7 @@ const galleryLabels: Record<string, string> = {
     state.busy = value;
     publishButton.disabled = value || !state.publishConfigured;
     const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
+    sortByFilenameButton.disabled = value || assets.length < 2;
     deleteAllButton.disabled =
       value || state.gallery === "system" || assets.length === 0;
     if (message) draftStatusElement.textContent = message;
@@ -341,6 +350,7 @@ const galleryLabels: Record<string, string> = {
     updatePanels();
     const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
     countElement.textContent = `${assets.length} asset${assets.length === 1 ? "" : "s"}`;
+    sortByFilenameButton.disabled = state.busy || assets.length < 2;
     deleteAllButton.hidden = state.gallery === "system";
     deleteAllButton.disabled = state.busy || assets.length === 0;
     assetsElement.innerHTML = "";
@@ -831,6 +841,44 @@ const galleryLabels: Record<string, string> = {
       });
       showStatus(
         `All assets removed from ${galleryLabels[state.gallery]}. Publish to make the change live.`,
+        "success",
+      );
+    } catch (error) {
+      showStatus(String(error), "error");
+    }
+  });
+
+  sortByFilenameButton.addEventListener("click", async () => {
+    const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
+    if (state.busy || assets.length < 2) return;
+    const collator = new Intl.Collator(undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+    const filename = (asset) => asset.key.split("/").pop() || asset.publicId;
+    const sorted = [...assets].sort(
+      (left, right) =>
+        collator.compare(filename(left), filename(right)) ||
+        collator.compare(left.publicId, right.publicId),
+    );
+    if (
+      sorted.every((asset, index) => asset.publicId === assets[index].publicId)
+    ) {
+      showStatus(
+        `${galleryLabels[state.gallery]} is already sorted by filename.`,
+        "info",
+      );
+      return;
+    }
+    clearStatus();
+    try {
+      await mutate({
+        action: "reorder",
+        folder: state.gallery,
+        order: sorted.map((asset) => asset.publicId),
+      });
+      showStatus(
+        `${galleryLabels[state.gallery]} sorted by filename. Publish to make the change live.`,
         "success",
       );
     } catch (error) {

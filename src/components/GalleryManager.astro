@@ -135,7 +135,16 @@ const galleryLabels: Record<string, string> = {
 
   <div class="mt-6 flex items-center justify-between">
     <h2 id="gallery-heading" class="text-lg font-semibold">Concerts</h2>
-    <span id="gallery-count" class="text-sm text-neutral-400"></span>
+    <div class="flex items-center gap-3">
+      <span id="gallery-count" class="text-sm text-neutral-400"></span>
+      <button
+        id="delete-all-gallery-assets"
+        type="button"
+        class="rounded border border-red-900 px-3 py-1.5 text-sm text-red-300 hover:bg-red-950/40 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Delete all
+      </button>
+    </div>
   </div>
   <div
     id="gallery-assets"
@@ -171,6 +180,7 @@ const galleryLabels: Record<string, string> = {
   const assetsElement = element("gallery-assets");
   const headingElement = element("gallery-heading");
   const countElement = element("gallery-count");
+  const deleteAllButton = element("delete-all-gallery-assets");
   const draftStatusElement = element("draft-status");
   const publishButton = element("publish-gallery-draft");
   const imagePanel = element("image-upload-panel");
@@ -240,6 +250,9 @@ const galleryLabels: Record<string, string> = {
   function setBusy(value, message) {
     state.busy = value;
     publishButton.disabled = value || !state.publishConfigured;
+    const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
+    deleteAllButton.disabled =
+      value || state.gallery === "system" || assets.length === 0;
     if (message) draftStatusElement.textContent = message;
   }
 
@@ -295,6 +308,8 @@ const galleryLabels: Record<string, string> = {
     updatePanels();
     const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
     countElement.textContent = `${assets.length} asset${assets.length === 1 ? "" : "s"}`;
+    deleteAllButton.hidden = state.gallery === "system";
+    deleteAllButton.disabled = state.busy || assets.length === 0;
     assetsElement.innerHTML = "";
     assets.forEach((asset, index) => {
       const card = document.createElement("article");
@@ -682,6 +697,31 @@ const galleryLabels: Record<string, string> = {
       showStatus(String(error), "error");
     } finally {
       setBusy(false);
+    }
+  });
+
+  deleteAllButton.addEventListener("click", async () => {
+    const assets = state.draft?.manifest?.folders?.[state.gallery] || [];
+    if (state.busy || state.gallery === "system" || assets.length === 0) return;
+    if (
+      !confirm(
+        `Remove all ${assets.length} assets from ${galleryLabels[state.gallery]}? The uploaded files are retained for rollback.`,
+      )
+    ) {
+      return;
+    }
+    clearStatus();
+    try {
+      await mutate({
+        action: "delete-all",
+        folder: state.gallery,
+      });
+      showStatus(
+        `All assets removed from ${galleryLabels[state.gallery]}. Publish to make the change live.`,
+        "success",
+      );
+    } catch (error) {
+      showStatus(String(error), "error");
     }
   });
 

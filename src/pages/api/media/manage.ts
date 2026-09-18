@@ -109,6 +109,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
       draft.manifest.folders[folder] = current.filter(
         (asset) => asset.publicId !== publicId,
       );
+    } else if (action === "delete-all") {
+      if (folder === "system") {
+        return json({ error: "Site images cannot be cleared" }, 400);
+      }
+      draft.manifest.folders[folder] = [];
     } else if (action === "reorder") {
       const order = Array.isArray(body.order)
         ? body.order.filter((item): item is string => typeof item === "string")

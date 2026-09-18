@@ -206,13 +206,14 @@ function page(directory) {
       #status.error { color: #fca5a5; }
       #status.success { color: #86efac; }
       #photos { display: flex; flex-wrap: wrap; }
+      .gallery-row { display: flex; width: 100%; }
       article { position: relative; overflow: hidden; margin: 2px; min-width: 0; background: #000; cursor: grab; user-select: none; }
       article.dragging { opacity: .25; }
       article.drop-target { outline: 3px solid #fff; outline-offset: -3px; }
       .ratio { display: block; }
       img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-      @media (max-width: 639px) {
-        article { max-width: calc(50% - 4px); }
+      @media (min-width: 640px) {
+        .gallery-row { display: contents; }
       }
     </style>
   </head>
@@ -259,46 +260,73 @@ function page(directory) {
         );
       }
 
+      function galleryRows() {
+        const rows = [];
+        let portraits = [];
+        const flushPortraits = () => {
+          if (portraits.length) {
+            rows.push(portraits);
+            portraits = [];
+          }
+        };
+        photos.forEach((photo) => {
+          if (photo.width < photo.height) {
+            portraits.push(photo);
+            if (portraits.length === 2) flushPortraits();
+            return;
+          }
+          flushPortraits();
+          rows.push([photo]);
+        });
+        flushPortraits();
+        return rows;
+      }
+
       function render() {
         photosElement.innerHTML = "";
-        photos.forEach((photo, index) => {
-          const name = photo.name;
-          const card = document.createElement("article");
-          card.draggable = true;
-          card.dataset.name = name;
-          const basis = Math.max(1, (photo.width * 350) / photo.height);
-          card.style.flexGrow = basis;
-          card.style.flexBasis = \`\${basis}px\`;
-          card.innerHTML = \`
-            <span class="ratio" style="padding-bottom: \${(photo.height / photo.width) * 100}%"></span>
-            <img src="/photos/\${encodeURIComponent(name)}" alt="">
-          \`;
-          card.addEventListener("dragstart", () => {
-            draggingName = name;
-            card.classList.add("dragging");
+        galleryRows().forEach((row) => {
+          const rowElement = document.createElement("div");
+          rowElement.className = "gallery-row";
+          row.forEach((photo) => {
+            const name = photo.name;
+            const card = document.createElement("article");
+            card.draggable = true;
+            card.dataset.name = name;
+            const basis = Math.max(1, (photo.width * 350) / photo.height);
+            card.style.flexGrow = basis;
+            card.style.flexBasis = \`\${basis}px\`;
+            card.innerHTML = \`
+              <span class="ratio" style="padding-bottom: \${(photo.height / photo.width) * 100}%"></span>
+              <img src="/photos/\${encodeURIComponent(name)}" alt="">
+            \`;
+            card.addEventListener("dragstart", () => {
+              draggingName = name;
+              card.classList.add("dragging");
+            });
+            card.addEventListener("dragend", () => {
+              draggingName = null;
+              document.querySelectorAll("article").forEach((item) =>
+                item.classList.remove("dragging", "drop-target")
+              );
+            });
+            card.addEventListener("dragover", (event) => {
+              event.preventDefault();
+              card.classList.add("drop-target");
+            });
+            card.addEventListener("dragleave", () => card.classList.remove("drop-target"));
+            card.addEventListener("drop", (event) => {
+              event.preventDefault();
+              card.classList.remove("drop-target");
+              if (!draggingName || draggingName === name) return;
+              const from = photos.findIndex((item) => item.name === draggingName);
+              const to = photos.findIndex((item) => item.name === name);
+              const [moved] = photos.splice(from, 1);
+              photos.splice(from < to ? to - 1 : to, 0, moved);
+              render();
+            });
+            rowElement.append(card);
           });
-          card.addEventListener("dragend", () => {
-            draggingName = null;
-            document.querySelectorAll("article").forEach((item) =>
-              item.classList.remove("dragging", "drop-target")
-            );
-          });
-          card.addEventListener("dragover", (event) => {
-            event.preventDefault();
-            card.classList.add("drop-target");
-          });
-          card.addEventListener("dragleave", () => card.classList.remove("drop-target"));
-          card.addEventListener("drop", (event) => {
-            event.preventDefault();
-            card.classList.remove("drop-target");
-            if (!draggingName || draggingName === name) return;
-            const from = photos.findIndex((item) => item.name === draggingName);
-            const to = photos.findIndex((item) => item.name === name);
-            const [moved] = photos.splice(from, 1);
-            photos.splice(from < to ? to - 1 : to, 0, moved);
-            render();
-          });
-          photosElement.append(card);
+          photosElement.append(rowElement);
         });
         commitButton.disabled = photos.length === 0 || !changed();
         statusElement.textContent = \`\${photos.length} photo\${photos.length === 1 ? "" : "s"}\`;

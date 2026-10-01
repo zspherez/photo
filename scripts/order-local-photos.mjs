@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { access, readdir, rename, stat } from "node:fs/promises";
+import { access, readdir, rename, stat, unlink } from "node:fs/promises";
 import { createServer } from "node:http";
 import { basename, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -157,6 +157,21 @@ async function renameInOrder(directory, orderedNames) {
   };
 }
 
+async function deletePhoto(directory, filename) {
+  if (typeof filename !== "string" || !filename || filename !== basename(filename)) {
+    throw new Error("Invalid photo filename");
+  }
+  if (!IMAGE_EXTENSIONS.has(extname(filename).toLowerCase())) {
+    throw new Error("Invalid photo filename");
+  }
+  const currentNames = await listPhotoNames(directory);
+  if (!currentNames.includes(filename)) {
+    throw new Error("Photo no longer exists");
+  }
+  await unlink(join(directory, filename));
+  return { deleted: filename };
+}
+
 function json(response, data, status = 200) {
   response.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -212,8 +227,14 @@ function page(directory) {
       article.drop-target { outline: 3px solid #fff; outline-offset: -3px; }
       .ratio { display: block; }
       img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+      .delete-photo { position: absolute; top: 8px; right: 8px; z-index: 1; display: grid; width: 34px; height: 34px; padding: 0; place-items: center; border-color: rgba(255, 255, 255, .7); border-radius: 999px; background: rgba(23, 23, 23, .8); color: #fff; font-size: 20px; line-height: 1; opacity: 0; transition: opacity .15s ease, background .15s ease; }
+      article:hover .delete-photo, .delete-photo:focus-visible { opacity: 1; }
+      .delete-photo:hover { background: rgba(127, 29, 29, .95); }
       @media (min-width: 640px) {
         .gallery-row { display: contents; }
+      }
+      @media (hover: none) {
+        .delete-photo { opacity: 1; }
       }
     </style>
   </head>
@@ -298,7 +319,37 @@ function page(directory) {
             card.innerHTML = \`
               <span class="ratio" style="padding-bottom: \${(photo.height / photo.width) * 100}%"></span>
               <img src="/photos/\${encodeURIComponent(name)}" alt="">
+              <button class="delete-photo" type="button" draggable="false">×</button>
             \`;
+            const deleteButton = card.querySelector(".delete-photo");
+            deleteButton.setAttribute("aria-label", \`Delete \${name}\`);
+            deleteButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+            deleteButton.addEventListener("dragstart", (event) => event.preventDefault());
+            deleteButton.addEventListener("click", async (event) => {
+              event.stopPropagation();
+              if (!confirm(\`Permanently delete "\${name}"? This cannot be undone.\`)) return;
+              deleteButton.disabled = true;
+              statusElement.textContent = \`Deleting \${name}…\`;
+              statusElement.className = "";
+              try {
+                const response = await fetch("/api/delete", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ filename: name }),
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || "Delete failed");
+                photos = photos.filter((item) => item.name !== data.deleted);
+                originalOrder = originalOrder.filter((item) => item !== data.deleted);
+                render();
+                statusElement.textContent = \`Deleted \${data.deleted}.\`;
+                statusElement.className = "success";
+              } catch (error) {
+                statusElement.textContent = String(error);
+                statusElement.className = "error";
+                deleteButton.disabled = false;
+              }
+            });
             card.addEventListener("dragstart", () => {
               draggingName = name;
               card.classList.add("dragging");
@@ -422,6 +473,13 @@ const server = createServer(async (request, response) => {
       }
       const body = await readJson(request);
       return json(response, await renameInOrder(directory, body.order));
+    }
+    if (request.method === "POST" && url.pathname === "/api/delete") {
+      if (request.headers.origin !== origin) {
+        return json(response, { error: "Invalid request origin" }, 403);
+      }
+      const body = await readJson(request);
+      return json(response, await deletePhoto(directory, body.filename));
     }
     if (url.pathname === "/favicon.ico") return response.writeHead(204).end();
     return text(response, "Not found", 404);

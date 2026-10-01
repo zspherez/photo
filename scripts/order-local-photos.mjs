@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { access, readdir, rename, stat, unlink } from "node:fs/promises";
+import { access, mkdir, readdir, rename, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { basename, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -157,7 +157,7 @@ async function renameInOrder(directory, orderedNames) {
   };
 }
 
-async function deletePhoto(directory, filename) {
+async function movePhotoToTrash(directory, filename) {
   if (typeof filename !== "string" || !filename || filename !== basename(filename)) {
     throw new Error("Invalid photo filename");
   }
@@ -168,8 +168,21 @@ async function deletePhoto(directory, filename) {
   if (!currentNames.includes(filename)) {
     throw new Error("Photo no longer exists");
   }
-  await unlink(join(directory, filename));
-  return { deleted: filename };
+
+  const trashDirectory = join(directory, "trash");
+  await mkdir(trashDirectory, { recursive: true });
+  const trashNames = new Set((await readdir(trashDirectory)).map((name) => name.toLocaleLowerCase()));
+  const extension = extname(filename);
+  const stem = basename(filename, extension);
+  let trashedAs = filename;
+  let suffix = 2;
+  while (trashNames.has(trashedAs.toLocaleLowerCase())) {
+    trashedAs = `${stem}-${suffix}${extension}`;
+    suffix += 1;
+  }
+
+  await rename(join(directory, filename), join(trashDirectory, trashedAs));
+  return { removed: filename, trashedAs };
 }
 
 function json(response, data, status = 200) {
@@ -322,27 +335,28 @@ function page(directory) {
               <button class="delete-photo" type="button" draggable="false">×</button>
             \`;
             const deleteButton = card.querySelector(".delete-photo");
-            deleteButton.setAttribute("aria-label", \`Delete \${name}\`);
+            deleteButton.setAttribute("aria-label", \`Move \${name} to trash\`);
+            deleteButton.title = "Move to trash";
             deleteButton.addEventListener("pointerdown", (event) => event.stopPropagation());
             deleteButton.addEventListener("dragstart", (event) => event.preventDefault());
             deleteButton.addEventListener("click", async (event) => {
               event.stopPropagation();
-              if (!confirm(\`Permanently delete "\${name}"? This cannot be undone.\`)) return;
+              if (!confirm(\`Move "\${name}" into the trash subfolder?\`)) return;
               deleteButton.disabled = true;
-              statusElement.textContent = \`Deleting \${name}…\`;
+              statusElement.textContent = \`Moving \${name} to trash…\`;
               statusElement.className = "";
               try {
-                const response = await fetch("/api/delete", {
+                const response = await fetch("/api/trash", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ filename: name }),
                 });
                 const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Delete failed");
-                photos = photos.filter((item) => item.name !== data.deleted);
-                originalOrder = originalOrder.filter((item) => item !== data.deleted);
+                if (!response.ok) throw new Error(data.error || "Could not move photo to trash");
+                photos = photos.filter((item) => item.name !== data.removed);
+                originalOrder = originalOrder.filter((item) => item !== data.removed);
                 render();
-                statusElement.textContent = \`Deleted \${data.deleted}.\`;
+                statusElement.textContent = \`Moved \${data.removed} to trash/\${data.trashedAs}.\`;
                 statusElement.className = "success";
               } catch (error) {
                 statusElement.textContent = String(error);
@@ -474,12 +488,12 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       return json(response, await renameInOrder(directory, body.order));
     }
-    if (request.method === "POST" && url.pathname === "/api/delete") {
+    if (request.method === "POST" && url.pathname === "/api/trash") {
       if (request.headers.origin !== origin) {
         return json(response, { error: "Invalid request origin" }, 403);
       }
       const body = await readJson(request);
-      return json(response, await deletePhoto(directory, body.filename));
+      return json(response, await movePhotoToTrash(directory, body.filename));
     }
     if (url.pathname === "/favicon.ico") return response.writeHead(204).end();
     return text(response, "Not found", 404);

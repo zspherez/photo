@@ -188,7 +188,16 @@ const showsData = [
     ...show,
     photographed: show.photographedArtists.length > 0,
   })),
-}));
+})).map(yearData => {
+  const totalShows = yearData.shows.length;
+  const photographedShows = yearData.shows.filter(show => show.photographed).length;
+  return {
+    ...yearData,
+    totalShows,
+    photographedShows,
+    attendedShows: totalShows - photographedShows,
+  };
+});
 
 // Calculate statistics
 const allShows = showsData.flatMap(yearData => yearData.shows);
@@ -225,7 +234,12 @@ const attendedShows = allShows.filter(show => !show.photographed).length;
         <div class="shows-container">
           {showsData.map(yearData => (
             <div class="year-section">
-              <h2 class="year-header">{yearData.year}</h2>
+              <h2 class="year-header">
+                {yearData.year}
+                <span class="year-counts">
+                  {" - "}<strong>{yearData.photographedShows}</strong> shows photographed, <strong>{yearData.attendedShows}</strong> shows attended, <strong>{yearData.totalShows}</strong> total shows
+                </span>
+              </h2>
               {yearData.shows.length === 0 ? (
                 <p class="no-shows">No shows this year</p>
               ) : (
@@ -343,6 +357,17 @@ const attendedShows = allShows.filter(show => !show.photographed).length;
       margin-bottom: 1rem;
       border-bottom: 2px solid #333;
       padding-bottom: 0.5rem;
+    }
+
+    .year-counts {
+      font-size: 1rem;
+      font-weight: normal;
+      color: #ccc;
+    }
+
+    .year-counts strong {
+      color: #9395CC;
+      font-weight: bold;
     }
 
     .no-shows {

@@ -145,25 +145,25 @@ const showsData = [
   {
     year: "2016",
     shows: [
-      { name: "Coldplay", city: "Dallas", venue: "AT&T Stadium", photographed: false, photographedArtists: ["Coldplay"], allArtists: ["Coldplay"] }
+      { name: "Coldplay", city: "Dallas", venue: "AT&T Stadium", photographed: false, photographedArtists: [], allArtists: ["Coldplay"] }
     ]
   },
   {
     year: "2015",
     shows: [
-      { name: "Indigo Girls", city: "Houston", venue: "House of Blues", photographed: false, photographedArtists: ["Indigo Girls"], allArtists: ["Indigo Girls"] }
+      { name: "Indigo Girls", city: "Houston", venue: "House of Blues", photographed: false, photographedArtists: [], allArtists: ["Indigo Girls"] }
     ]
   },
   {
     year: "2014",
     shows: [
-      { name: "Pitbull", city: "Houston", venue: "Toyota Center", photographed: false, photographedArtists: ["Pitbull"], allArtists: ["Pitbull"] }
+      { name: "Pitbull", city: "Houston", venue: "Toyota Center", photographed: false, photographedArtists: [], allArtists: ["Pitbull"] }
     ]
   },
   {
     year: "2013",
     shows: [
-      { name: "Imagine Dragons", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: ["Imagine Dragons"], allArtists: ["Imagine Dragons"] }
+      { name: "Imagine Dragons", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: [], allArtists: ["Imagine Dragons"] }
     ]
   },
   {
@@ -177,16 +177,14 @@ const showsData = [
   {
     year: "2010",
     shows: [
-      { name: "Foreigner", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: ["Foreigner"], allArtists: ["Foreigner", "Styx", "Kansas"] }
+      { name: "Foreigner", city: "The Woodlands", venue: "Cynthia Woods Mitchell Pavilion", photographed: false, photographedArtists: [], allArtists: ["Foreigner", "Styx", "Kansas"] }
     ]
   }
-// Some records' literal `photographed` value drifts from `photographedArtists`;
-// derive it here instead of trusting the stored field.
 ].map(yearData => ({
   ...yearData,
   shows: yearData.shows.map(show => ({
     ...show,
-    photographed: show.photographedArtists.length > 0,
+    photographedArtists: show.photographed ? show.photographedArtists : [],
   })),
 })).map(yearData => {
   const totalShows = yearData.shows.length;
